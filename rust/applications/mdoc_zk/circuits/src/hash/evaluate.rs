@@ -187,7 +187,26 @@ pub fn evaluate_given<L: compile_logic::LogicIO>(
         len: bv.of_u64::<K_ATTR_INDEX_BITS>(given.hash_input.expected_doc_type.len() as u64),
     };
 
+    let seed_preimage = std::array::from_fn(|i| {
+        bv.of_u64::<8>(u64::from(given.seed_preimage[i]))
+    });
+
+    let verifier_input = std::array::from_fn(|i| {
+        bv.of_u64::<8>(
+            u64::from(given.hash_input.verifier_input[i])
+        )
+    });
+
+    let pseudonym = std::array::from_fn(|i| {
+        bv.of_u64::<8>(
+            u64::from(given.hash_input.pseudonym[i])
+        )
+    });
+
     WireGiven {
+        verifier_input,
+        pseudonym,
+        seed_preimage,
         disclosed_attributes,
         now,
         suppress_doc_type_check,
@@ -228,8 +247,22 @@ pub fn evaluate_derived<L: compile_logic::LogicIO>(
 
     let sha_derived = circuits_sha256msg::evaluate::evaluate_derived(&derived.sha_derived, bv);
 
+    let seed_sha_derived =
+        circuits_sha256msg::evaluate::evaluate_derived(
+            &derived.seed_sha_derived,
+            bv,
+        );
+
+    let pseudonym_sha_derived =
+        circuits_sha256msg::evaluate::evaluate_derived(
+            &derived.pseudonym_sha_derived,
+            bv,
+        );
+
     WireDerived {
         attribute_derived,
+        seed_sha_derived,
+        pseudonym_sha_derived,
         sha_derived,
     }
 }

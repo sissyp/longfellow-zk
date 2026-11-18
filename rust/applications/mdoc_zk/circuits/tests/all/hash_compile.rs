@@ -44,7 +44,7 @@ fn compile_hash_circuit<FC>(
 where FC: MdocHashCompileField {
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
     let mut pos = compile_logic::K_FIRST_WIRE_POSITION;
     let num_attrs = hash_input.attrs.len();
 
@@ -230,7 +230,7 @@ fn test_mdoc_zk_circuits_hash_for_field<
 ) {
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
     let num_attrs = hash_input.attrs.len();
 
     let (_circuit, stats, _symbols) = compile_compiler::compile(fc, |iologic| {
@@ -269,7 +269,7 @@ fn test_compile_mdoc_hash_corruptors() {
 
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
     let mac_input = HashMac {
         mac_av: 0x112233445566778899aabbccddeeff00,
         mac_ap: [[
@@ -388,7 +388,7 @@ fn test_paranoid_hash_input_subsets_and_permutations() {
 
         for p in perms {
             let req_ids: Vec<&[u8]> = p.iter().map(|&idx| four_ids[idx]).collect();
-            let input = hash_input_of_parsed_mdoc(&parsed, &req_ids, now);
+            let input = hash_input_of_parsed_mdoc(&parsed, &req_ids, now, [0u8; 16]);
             assert_eq!(input.attrs.len(), req_ids.len());
             for (i, &req_id) in req_ids.iter().enumerate() {
                 let attr_name_bytes = &input.attrs[i].expected_name;

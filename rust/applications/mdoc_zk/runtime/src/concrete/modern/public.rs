@@ -33,10 +33,8 @@ fn push_modern_input_attrs(
         }
         builder.push_bits_len(cbor_id.len() as u64, K_ATTR_LEN_BITS);
 
-        for i in 0..64 {
-            builder.push_v8(*la.cbor_value.get(i).unwrap_or(&0));
-        }
-        builder.push_bits_len(la.cbor_value.len() as u64, K_ATTR_LEN_BITS);
+        // The attribute value is no longer public.
+        // It is assigned in modern/private.rs.
     }
 }
 

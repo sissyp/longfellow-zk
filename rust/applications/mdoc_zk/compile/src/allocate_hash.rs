@@ -133,8 +133,17 @@ where
     let (now, _) = allocator
         .allocate_plucked_v8_array::<K_TIMESTAMP_LEN, { K_HASH_V8_BIT_PLUCKER }>(plucker_v8);
 
-    let disclosed_attributes = (0..num_attrs)
-        .map(|_| allocate_disclosed_attribute(allocator, plucker_v8))
+    // Experimental layout: attribute names are public,
+    // but their CBOR values are private.
+    let public_attr_names: Vec<_> = (0..num_attrs)
+        .map(|_| {
+            let (data, _) =
+                allocator.allocate_plucked_v8_array::<32, { K_HASH_V8_BIT_PLUCKER }>(
+                    plucker_v8,
+                );
+            let len = allocator.allocate_bitvec::<{ K_ATTR_INDEX_BITS }>();
+            AttrSlice { data, len }
+        })
         .collect();
 
     let mac_e = [allocator.allocate_wire(), allocator.allocate_wire()];
@@ -152,7 +161,37 @@ where
         len: expected_doc_type_len,
     };
 
+    // Public verifier identifier hash V.
+    let (verifier_input, _) = allocator
+        .allocate_plucked_v8_array::<32, { K_HASH_V8_BIT_PLUCKER }>(
+            plucker_v8,
+        );
+
+    // Public verifier-scoped pseudonym N.
+    let (pseudonym, _) = allocator
+        .allocate_plucked_v8_array::<32, { K_HASH_V8_BIT_PLUCKER }>(
+            plucker_v8,
+        );
+
     let pub_inputs_count = allocator.pos;
+
+    // Private CBOR values, allocated immediately after
+    // the public/private boundary.
+    let disclosed_attributes = public_attr_names
+        .into_iter()
+        .map(|expected_name| {
+            let (data, _) =
+                allocator.allocate_plucked_v8_array::<64, { K_HASH_V8_BIT_PLUCKER }>(
+                    plucker_v8,
+                );
+            let len = allocator.allocate_bitvec::<{ K_ATTR_INDEX_BITS }>();
+
+            DisclosedAttribute {
+                expected_name,
+                expected_cbor_value: AttrSlice { data, len },
+            }
+        })
+        .collect();
 
     let (issuer_sig_e, _) =
         allocator.allocate_plucked_v256::<{ K_HASH_V256_BIT_PLUCKER }>(plucker_v256);
@@ -188,6 +227,21 @@ where
 
     let sha_derived = allocate_sha_derived(allocator, plucker_sha, K_MAX_SHA_BLOCKS);
 
+    // Experimental SHA256(seed) message: 64 padded bytes.
+    let (seed_preimage, _) =
+        allocator.allocate_plucked_v8_array::<
+            64,
+            { K_HASH_V8_BIT_PLUCKER }
+        >(plucker_v8);
+
+    let seed_sha_derived =
+        allocate_sha_derived(allocator, plucker_sha, 1);
+
+    // SHA256(DST || seed || zero32 || V).
+    // The 119-byte message requires two SHA-256 blocks.
+    let pseudonym_sha_derived =
+        allocate_sha_derived(allocator, plucker_sha, 2);
+
     let subfield_boundary_val = allocator.pos;
 
     let mac_ap = std::array::from_fn(|_| [allocator.allocate_wire(), allocator.allocate_wire()]);
@@ -208,6 +262,9 @@ where
         dev_key_info_offset_in_preimage,
         value_digests_offset_in_preimage,
         attribute_given,
+        verifier_input,
+        pseudonym,
+        seed_preimage,
         mac_e,
         mac_device_pkx,
         mac_device_pky,
@@ -217,6 +274,8 @@ where
 
     let derived = HashDerived {
         attribute_derived,
+        seed_sha_derived,
+        pseudonym_sha_derived,
         sha_derived,
     };
 

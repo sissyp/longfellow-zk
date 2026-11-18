@@ -67,6 +67,12 @@ pub struct Given<L: LogicIO> {
     pub dev_key_info_offset_in_preimage: HashIndex<L>,
     pub value_digests_offset_in_preimage: HashIndex<L>,
     pub attribute_given: Vec<AttrGiven<L>>,
+    // Public verifier scope and pseudonym.
+    pub verifier_input: [V8<L>; 32],
+    pub pseudonym: [V8<L>; 32],
+
+    // Experimental private seed commitment.
+    pub seed_preimage: [V8<L>; 64],
     pub mac_e: [L::Wire; 2],
     pub mac_device_pkx: [L::Wire; 2],
     pub mac_device_pky: [L::Wire; 2],
@@ -76,6 +82,8 @@ pub struct Given<L: LogicIO> {
 
 pub struct Derived<L: LogicIO> {
     pub attribute_derived: Vec<AttrDerived<L>>,
+    pub seed_sha_derived: circuits_sha256msg::Derived<L>,
+    pub pseudonym_sha_derived: circuits_sha256msg::Derived<L>,
     pub sha_derived: circuits_sha256msg::Derived<L>,
 }
 
@@ -129,7 +137,174 @@ where L::F: MdocHashCompileField
                 self.assert_mso_device_key(given, &preimage),
                 self.assert_mso_value_digests(given, &preimage),
                 self.assert_attributes(given, derived, &preimage),
+                self.assert_seed_commitment(given, derived),
+                self.assert_pseudonym(
+                    &given.seed_preimage,
+                    &given.verifier_input,
+                    &given.pseudonym,
+                    &derived.pseudonym_sha_derived,
+                ),
             ],
+        )
+    }
+
+
+    // Experimental one-attribute circuit:
+    // authenticated SSC == SHA256(private 16-byte seed).
+    fn assert_seed_commitment(
+        &self,
+        given: &Given<L>,
+        derived: &Derived<L>,
+    ) -> L::Assertions {
+        assert_eq!(
+            given.disclosed_attributes.len(),
+            1,
+            "Experimental seed commitment expects one SSC attribute"
+        );
+
+        let attr = &given.disclosed_attributes[0];
+        let value = &attr.expected_cbor_value;
+
+        // CBOR byte string of exactly 32 bytes:
+        // 0x58 0x20 || SSC[32].
+        let prefix = self.assert_bytes_at(
+            2,
+            &value.data[0..2],
+            &[0x58, 0x20],
+        );
+
+        let length = self.bv.assert_eq(
+            "ssc_cbor_length",
+            &value.len,
+            &self.bv.of_u64::<{
+                crate::mso_attribute::constants::K_ATTR_INDEX_BITS
+            }>(34),
+        );
+
+        // Construct the expected V256 digest from the
+        // authenticated CBOR value. SHA-256 digests use
+        // big-endian bytes, while Bitvec is LSB-first.
+        let expected_hash = self.bv.from_fn::<256, _>(|j| {
+            let byte_index = 2 + (31 - j / 8);
+            let bit_index = j % 8;
+
+            value.data[byte_index].as_array()[bit_index].clone()
+        });
+
+        let sha_given = circuits_sha256msg::circuit::Given {
+            padded_preimage: given.seed_preimage.to_vec(),
+            nblocks: self.bv.of_u64::<1>(1),
+            length_bytes: self.bv.of_u64::<64>(16),
+            expected_hash,
+        };
+
+        let sha = Sha256Msg::<L, 1>::new(self.logic);
+
+        let sha_assertion = sha.assert_message_hash(
+            &sha_given,
+            &derived.seed_sha_derived,
+        );
+
+        self.logic.assert_all(
+            "authenticated_seed_commitment",
+            &[prefix, length, sha_assertion],
+        )
+    }
+
+
+    /// Peter's verifier-scoped pseudonym:
+    ///
+    /// N = SHA256(
+    ///     DST || private_seed || [0u8; 32] || verifier_input
+    /// )
+    ///
+    /// The seed comes from the SAME padded SHA256 message
+    /// already used by assert_seed_commitment().
+    #[allow(dead_code)]
+    fn assert_pseudonym(
+        &self,
+        seed_preimage: &[V8<L>; 64],
+        verifier_input: &[V8<L>; 32],
+        expected_pseudonym: &[V8<L>; 32],
+        sha_derived: &circuits_sha256msg::Derived<L>,
+    ) -> L::Assertions {
+        const DST: &[u8] =
+            b"nym_auth/v1/known-offender-matching-ssc";
+
+        // 39 + 16 + 32 + 32 = 119 bytes.
+        const MESSAGE_LENGTH: usize = 119;
+
+        let mut padded_preimage = Vec::with_capacity(128);
+
+        // 1. Domain separator.
+        for &byte in DST {
+            padded_preimage.push(self.bv.of_u8(byte));
+        }
+
+        // 2. Reuse the SAME private seed.
+        //
+        // seed_preimage[0..16] contains the original
+        // 16-byte seed. Its remaining bytes represent
+        // SHA-256 padding for the commitment hash.
+        padded_preimage.extend(
+            seed_preimage[..16].iter().cloned()
+        );
+
+        // 3. Peter's fixed 32-byte zero user input.
+        for _ in 0..32 {
+            padded_preimage.push(self.bv.of_u8(0));
+        }
+
+        // 4. Public verifier input V.
+        padded_preimage.extend(
+            verifier_input.iter().cloned()
+        );
+
+        assert_eq!(
+            padded_preimage.len(),
+            MESSAGE_LENGTH
+        );
+
+        // SHA-256 padding.
+        padded_preimage.push(self.bv.of_u8(0x80));
+
+        // 119 bytes requires two blocks.
+        // The message reaches 120 bytes after 0x80,
+        // leaving exactly 8 bytes for its bit length.
+        //
+        // 119 * 8 = 952 = 0x03B8.
+        for &byte in &[0u8, 0, 0, 0, 0, 0, 0x03, 0xB8] {
+            padded_preimage.push(self.bv.of_u8(byte));
+        }
+
+        assert_eq!(padded_preimage.len(), 128);
+
+        // Convert the public pseudonym N into V256,
+        // preserving the same digest bit ordering
+        // used by assert_seed_commitment().
+        let expected_hash = self.bv.from_fn::<256, _>(|j| {
+            let byte_index = 31 - j / 8;
+            let bit_index = j % 8;
+
+            expected_pseudonym[byte_index]
+                .as_array()[bit_index]
+                .clone()
+        });
+
+        let sha_given = circuits_sha256msg::circuit::Given {
+            padded_preimage,
+            nblocks: self.bv.of_u64::<2>(2),
+            length_bytes: self.bv.of_u64::<64>(
+                MESSAGE_LENGTH as u64
+            ),
+            expected_hash,
+        };
+
+        let sha = Sha256Msg::<L, 2>::new(self.logic);
+
+        sha.assert_message_hash(
+            &sha_given,
+            sha_derived,
         )
     }
 

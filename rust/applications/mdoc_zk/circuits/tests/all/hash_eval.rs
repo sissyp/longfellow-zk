@@ -33,7 +33,7 @@ fn test_eval_mdoc_hash_independent() {
     let fc = P256Field::new();
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
 
     let tracker = compile_logic::tracker::AssertionTracker::new();
     let l = EvalLogic::new_with_tracker(&fc, &tracker);
@@ -57,7 +57,7 @@ fn test_eval_mdoc_hash_generic<'a, const W: usize, FC>(l: &'a EvalLogic<'a, FC>)
 where FC: CompileField + circuits_analog_adder::FieldWrappingSum {
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
 
     let mac_input = HashMac {
         mac_av: 0,
@@ -79,7 +79,7 @@ fn test_eval_mdoc_hash_with_mac_generic<'a, const W: usize, FC>(l: &'a EvalLogic
 where FC: CompileField + circuits_analog_adder::FieldWrappingSum {
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
 
     let av_u128 = 0x112233445566778899aabbccddeeff00u128;
     let ap0_u128 = 0xabcdef0123456789abcdef0123456789u128;
@@ -238,7 +238,7 @@ where FC: CompileField + circuits_analog_adder::FieldWrappingSum {
         let is_negative = filename.starts_with("fail-");
 
         let (_, parsed, now) = parse_test_data::<4, CompileNat<4>>(case.data);
-        let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+        let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
 
         let mac_input = HashMac {
             mac_av: 0,
@@ -287,7 +287,7 @@ fn test_namespace_mixup_exploit() {
 
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let mut hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+    let mut hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
 
     let doc_type_off = 23 + parsed.doc_type_offset_in_mso;
     hash_input.cbor_mso[doc_type_off] ^= 1;
@@ -333,7 +333,7 @@ fn test_eval_mdoc_hash_shared_corruptors() {
 
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let base_hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+    let base_hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
     let base_mac_input = HashMac {
         mac_av: 0x112233445566778899aabbccddeeff00u128,
         mac_ap: [
@@ -395,7 +395,7 @@ fn test_check_doc_type_suppression() {
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
 
     // 1. When suppress_doc_type_check is false and expected_doc_type matches, evaluation succeeds.
-    let mut hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+    let mut hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
     hash_input.suppress_doc_type_check = false;
     hash_input.expected_doc_type = b"org.iso.18013.5.1.mDL".to_vec();
 

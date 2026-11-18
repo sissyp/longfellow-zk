@@ -42,6 +42,55 @@ pub fn push_witness_hash<N: Nat<4>>(
     }
 }
 
+
+/// Experimental private-SSC witness construction.
+/// The seed is private and is never passed to the verifier.
+pub fn push_witness_hash_with_seed<N: Nat<4>>(
+    version: usize,
+    gf2: &Gf2_128Field,
+    attrs: &[RequestedAttribute],
+    parsed: &ParsedMdoc<N>,
+    mac_ap: &[[u128; 2]; 3],
+    secret_seed: &[u8; 16],
+) -> Result<Vec<Gf2_128>, MdocProverErrorCode> {
+    if version >= 8 {
+        modern::push_witness_hash_with_seed(
+            gf2,
+            attrs,
+            parsed,
+            mac_ap,
+            Some(secret_seed),
+        )
+    } else {
+        Err(MdocProverErrorCode::InvalidZkSpecVersion)
+    }
+}
+
+
+/// Experimental verifier-scoped pseudonym witness.
+pub fn push_witness_hash_with_seed_and_verifier<N: Nat<4>>(
+    version: usize,
+    gf2: &Gf2_128Field,
+    attrs: &[RequestedAttribute],
+    parsed: &ParsedMdoc<N>,
+    mac_ap: &[[u128; 2]; 3],
+    secret_seed: &[u8; 16],
+    verifier_input: &[u8; 32],
+) -> Result<Vec<Gf2_128>, MdocProverErrorCode> {
+    if version >= 8 {
+        modern::push_witness_hash_with_seed_and_verifier(
+            gf2,
+            attrs,
+            parsed,
+            mac_ap,
+            Some(secret_seed),
+            verifier_input,
+        )
+    } else {
+        Err(MdocProverErrorCode::InvalidZkSpecVersion)
+    }
+}
+
 pub fn push_witness_sig(
     version: usize,
     p256: &P256Field,
@@ -86,6 +135,47 @@ pub fn push_input_hash(
     } else {
         push_legacy_input_hash(gf2, version, attrs, now_bytes, macs, av)
     }
+}
+
+
+/// Public hash inputs for the experimental nym_auth circuit.
+/// V and N appear after all original public hash inputs.
+#[allow(clippy::too_many_arguments)]
+pub fn push_input_hash_with_pseudonym(
+    version: usize,
+    gf2: &Gf2_128Field,
+    attrs: &[RequestedAttribute],
+    now_bytes: &[u8],
+    macs: &[u128; 6],
+    av: u128,
+    suppress_doc_type_check: bool,
+    expected_doc_type: &[u8],
+    verifier_input: &[u8; 32],
+    pseudonym: &[u8; 32],
+) -> Vec<Gf2_128> {
+    let mut result = push_input_hash(
+        version,
+        gf2,
+        attrs,
+        now_bytes,
+        macs,
+        av,
+        suppress_doc_type_check,
+        expected_doc_type,
+    );
+
+    let mut builder = builder::AssignmentBuilder::new(gf2);
+
+    for &byte in verifier_input {
+        builder.push_v8(byte);
+    }
+
+    for &byte in pseudonym {
+        builder.push_v8(byte);
+    }
+
+    result.extend(builder.into_inner());
+    result
 }
 
 pub fn push_input_sig<N: Nat<4>>(

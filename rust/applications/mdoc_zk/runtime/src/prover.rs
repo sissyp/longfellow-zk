@@ -62,6 +62,103 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
     doc_type: &str,
     rng: &mut RNG,
 ) -> Result<Vec<u8>, MdocProverErrorCode> {
+    run_mdoc_prover_inner_impl(
+        zk_spec,
+        circuits_compressed,
+        mdoc_bytes,
+        pkx,
+        pky,
+        transcript,
+        attrs,
+        now,
+        doc_type,
+        None,
+        None,
+        rng,
+    )
+}
+
+/// Experimental prover for issuer-authenticated seed commitments.
+#[allow(clippy::too_many_arguments)]
+pub fn run_mdoc_prover_inner_with_seed<RNG: RandomEngine>(
+    zk_spec: &ZkSpecStruct,
+    circuits_compressed: &[u8],
+    mdoc_bytes: &[u8],
+    pkx: &str,
+    pky: &str,
+    transcript: &[u8],
+    attrs: &[RequestedAttribute],
+    now: &str,
+    doc_type: &str,
+    secret_seed: &[u8; 16],
+    rng: &mut RNG,
+) -> Result<Vec<u8>, MdocProverErrorCode> {
+    run_mdoc_prover_inner_impl(
+        zk_spec,
+        circuits_compressed,
+        mdoc_bytes,
+        pkx,
+        pky,
+        transcript,
+        attrs,
+        now,
+        doc_type,
+        Some(secret_seed),
+        None,
+        rng,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+
+/// Prove an issuer-authenticated verifier-scoped pseudonym.
+/// The private seed is never included in the public inputs.
+#[allow(clippy::too_many_arguments)]
+pub fn run_mdoc_prover_inner_with_pseudonym<RNG: RandomEngine>(
+    zk_spec: &ZkSpecStruct,
+    circuits_compressed: &[u8],
+    mdoc_bytes: &[u8],
+    pkx: &str,
+    pky: &str,
+    transcript: &[u8],
+    attrs: &[RequestedAttribute],
+    now: &str,
+    doc_type: &str,
+    secret_seed: &[u8; 16],
+    verifier_input: &[u8; 32],
+    pseudonym: &[u8; 32],
+    rng: &mut RNG,
+) -> Result<Vec<u8>, MdocProverErrorCode> {
+    run_mdoc_prover_inner_impl(
+        zk_spec,
+        circuits_compressed,
+        mdoc_bytes,
+        pkx,
+        pky,
+        transcript,
+        attrs,
+        now,
+        doc_type,
+        Some(secret_seed),
+        Some((verifier_input, pseudonym)),
+        rng,
+    )
+}
+
+fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
+    zk_spec: &ZkSpecStruct,
+    circuits_compressed: &[u8],
+    mdoc_bytes: &[u8],
+    pkx: &str,
+    pky: &str,
+    transcript: &[u8],
+    attrs: &[RequestedAttribute],
+    now: &str,
+    doc_type: &str,
+    secret_seed: Option<&[u8; 16]>,
+    pseudonym_scope: Option<(&[u8; 32], &[u8; 32])>,
+    rng: &mut RNG,
+) -> Result<Vec<u8>, MdocProverErrorCode> {
     let version = zk_spec.version;
     let (config_hash, config_sig) = crate::ligero_configs(zk_spec);
     if !crate::is_supported_version(version) {
@@ -115,7 +212,21 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
         }
     }
 
-    let witness_hash = crate::push_witness_hash(version, &gf2, attrs, &parsed, &mac_ap)?;
+    let witness_hash = if let (Some(seed), Some((v, _n))) =
+        (secret_seed, pseudonym_scope)
+    {
+        crate::concrete::push_witness_hash_with_seed_and_verifier(
+            version, &gf2, attrs, &parsed, &mac_ap, seed, v,
+        )?
+    } else if let Some(seed) = secret_seed {
+        crate::concrete::push_witness_hash_with_seed(
+            version, &gf2, attrs, &parsed, &mac_ap, seed,
+        )?
+    } else {
+        crate::push_witness_hash(
+            version, &gf2, attrs, &parsed, &mac_ap,
+        )?
+    };
     let witness_sig = crate::push_witness_sig(
         version, &p256, &q256, &secp256r1, &issuer_pk, &parsed, &mac_ap,
     )?;
@@ -156,16 +267,18 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
         av_val,
         &mac_ap,
     );
-    let hash_pub_inputs = crate::push_input_hash(
-        version,
-        &gf2,
-        attrs,
-        now.as_bytes(),
-        &macs,
-        av_val,
-        false,
-        doc_type.as_bytes(),
-    );
+    let hash_pub_inputs = if let Some((v, n)) = pseudonym_scope {
+        crate::concrete::push_input_hash_with_pseudonym(
+            version, &gf2, attrs, now.as_bytes(),
+            &macs, av_val, false, doc_type.as_bytes(),
+            v, n,
+        )
+    } else {
+        crate::push_input_hash(
+            version, &gf2, attrs, now.as_bytes(),
+            &macs, av_val, false, doc_type.as_bytes(),
+        )
+    };
     let sig_pub_inputs = crate::push_input_sig(
         version,
         &p256,

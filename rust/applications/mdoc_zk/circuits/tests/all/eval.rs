@@ -125,7 +125,7 @@ fn test_all_two_circuit_setups() {
             continue;
         }
         let (issuer_pk, parsed, now) = parse_test_data::<4, CompileNat<4>>(case.data);
-        let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now);
+        let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
         let sig_input = signature_input_of_parsed_mdoc(&parsed, issuer_pk);
         run_two_circuit_setup_generic(
             &p256,

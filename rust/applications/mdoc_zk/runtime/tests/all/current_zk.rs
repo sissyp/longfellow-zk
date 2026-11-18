@@ -998,3 +998,681 @@ fn test_all_current_zk() {
     run_circuit_supports_cbor();
     run_namespace_mixup(&test_circuits);
 }
+
+#[test]
+fn test_peter_mdoc_parse() {
+    let mdoc = std::fs::read(
+        "/tmp/peter-device-response.cbor"
+    ).unwrap();
+
+    let transcript = std::fs::read(
+        "/tmp/peter-transcript.cbor"
+    ).unwrap();
+
+    let doc_type = "eu.europa.ec.eudi.nym_auth.1";
+
+    let parsed = mdoc_zk_circuits::cbor::mdoc::parse_mdoc::<
+        runtime_algebra::RuntimeNat<4>
+    >(
+        &mdoc,
+        &transcript,
+        doc_type,
+    ).expect("Google could not parse Peter's credential");
+
+    println!("Peter credential parsed successfully");
+    println!("docType: {}", parsed.doc_type);
+    println!("Attributes: {}", parsed.attrs.len());
+
+    for attr in &parsed.attrs {
+        println!(
+            "Attribute: {} | CBOR value: {} bytes",
+            String::from_utf8_lossy(&attr.name),
+            attr.cbor_value.len()
+        );
+    }
+
+    assert!(parsed.get_attribute(b"ssc").is_some());
+    assert!(parsed.get_attribute(b"birth_date").is_some());
+}
+
+
+#[test]
+fn test_peter_mdoc_full_proof() {
+    use runtime_algebra::RuntimeNat;
+
+    let mdoc = std::fs::read(
+        "/tmp/peter-device-response.cbor"
+    ).unwrap();
+
+    let transcript = std::fs::read(
+        "/tmp/peter-transcript.cbor"
+    ).unwrap();
+
+    let doc_type = "eu.europa.ec.eudi.nym_auth.1";
+
+    let parsed =
+        mdoc_zk_circuits::cbor::mdoc::parse_mdoc::<RuntimeNat<4>>(
+            &mdoc, &transcript, doc_type
+        ).expect("Peter credential parsing failed");
+
+    let ssc = parsed.get_attribute(b"ssc")
+        .expect("SSC attribute missing");
+
+    let req_attrs = vec![
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"ssc",
+            &ssc.cbor_value,
+        )
+    ];
+
+    println!("SSC CBOR length: {}", ssc.cbor_value.len());
+
+    let circuits = TestCircuits::compile_all();
+    let provided = circuits.get(1)
+        .expect("Missing 1-attribute circuit");
+
+    let pkx = "0xb626aa933b215bc28f3b4924bf675454d2121f28bbb146415c181092f7fd9080";
+    let pky = "0xbf779357652d68be5ab61c667bde4ebff67b9efa2535c1138508fad656a2ab63";
+    let now = "2026-10-07T12:00:00Z";
+
+    println!("Running Google Longfellow prover...");
+
+    let mut rng = runtime_random::DeterministicRng::new(42);
+
+    let proof = run_mdoc_prover_inner(
+        &provided.spec,
+        &provided.compressed,
+        &mdoc,
+        pkx,
+        pky,
+        &transcript,
+        &req_attrs,
+        now,
+        doc_type,
+        &mut rng,
+    ).expect("Google prover rejected Peter credential");
+
+    println!("Proof generated: {} bytes", proof.len());
+
+    let result = run_mdoc_verifier_inner(
+        &provided.spec,
+        &provided.compressed,
+        pkx,
+        pky,
+        &transcript,
+        &req_attrs,
+        now,
+        doc_type,
+        &proof,
+    );
+
+    println!("Verification result: {:?}", result);
+
+    assert!(result.is_ok(), "Google verifier rejected proof");
+
+    println!("PETER CREDENTIAL VERIFIED BY GOOGLE LONGFELLOW");
+}
+
+#[test]
+fn test_peter_mdoc_both_attributes() {
+    use runtime_algebra::RuntimeNat;
+
+    let mdoc = std::fs::read(
+        "/tmp/peter-device-response.cbor"
+    ).unwrap();
+
+    let transcript = std::fs::read(
+        "/tmp/peter-transcript.cbor"
+    ).unwrap();
+
+    let doc_type = "eu.europa.ec.eudi.nym_auth.1";
+
+    let parsed =
+        mdoc_zk_circuits::cbor::mdoc::parse_mdoc::<RuntimeNat<4>>(
+            &mdoc, &transcript, doc_type
+        ).expect("Peter credential parsing failed");
+
+    let ssc = parsed.get_attribute(b"ssc")
+        .expect("SSC attribute missing");
+
+    let birth = parsed.get_attribute(b"birth_date")
+        .expect("birth_date attribute missing");
+
+    let req_attrs = vec![
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"birth_date",
+            &birth.cbor_value,
+        ),
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"ssc",
+            &ssc.cbor_value,
+        )
+    ];
+
+    println!("SSC CBOR length: {}", ssc.cbor_value.len());
+
+    let circuits = TestCircuits::compile_all();
+    let provided = circuits.get(2)
+        .expect("Missing 1-attribute circuit");
+
+    let pkx = "0xb626aa933b215bc28f3b4924bf675454d2121f28bbb146415c181092f7fd9080";
+    let pky = "0xbf779357652d68be5ab61c667bde4ebff67b9efa2535c1138508fad656a2ab63";
+    let now = "2026-10-07T12:00:00Z";
+
+    println!("Running Google Longfellow prover...");
+
+    let mut rng = runtime_random::DeterministicRng::new(42);
+
+    let proof = run_mdoc_prover_inner(
+        &provided.spec,
+        &provided.compressed,
+        &mdoc,
+        pkx,
+        pky,
+        &transcript,
+        &req_attrs,
+        now,
+        doc_type,
+        &mut rng,
+    ).expect("Google prover rejected Peter credential");
+
+    println!("Proof generated: {} bytes", proof.len());
+
+    let result = run_mdoc_verifier_inner(
+        &provided.spec,
+        &provided.compressed,
+        pkx,
+        pky,
+        &transcript,
+        &req_attrs,
+        now,
+        doc_type,
+        &proof,
+    );
+
+    println!("Verification result: {:?}", result);
+
+    assert!(result.is_ok(), "Google verifier rejected proof");
+
+    println!("PETER BOTH ATTRIBUTES VERIFIED BY GOOGLE LONGFELLOW");
+}
+
+#[test]
+fn test_peter_private_ssc() {
+    use runtime_algebra::RuntimeNat;
+
+    let mdoc = std::fs::read(
+        "/tmp/peter-device-response.cbor"
+    ).unwrap();
+
+    let transcript = std::fs::read(
+        "/tmp/peter-transcript.cbor"
+    ).unwrap();
+
+    let doc_type = "eu.europa.ec.eudi.nym_auth.1";
+
+    let parsed =
+        mdoc_zk_circuits::cbor::mdoc::parse_mdoc::<RuntimeNat<4>>(
+            &mdoc, &transcript, doc_type
+        ).expect("Peter credential parsing failed");
+
+    let ssc = parsed.get_attribute(b"ssc")
+        .expect("SSC attribute missing");
+
+    let req_attrs = vec![
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"ssc",
+            &ssc.cbor_value,
+        )
+    ];
+
+    println!("SSC CBOR length: {}", ssc.cbor_value.len());
+
+
+    let profile = mdoc_zk_compile::LigeroProfile {
+        rateinv: 7,
+        nreq: 132,
+    };
+
+    let (archive_bytes, config_sig, config_hash) =
+        mdoc_zk_compile::compile_circuits(
+            1,
+            profile,
+            profile,
+        ).expect("Experimental circuit compilation failed");
+
+    // Experimental specification, not an official Google circuit ID.
+    // The inner prover/verifier functions use the supplied archive.
+    let mut spec = mdoc_zk_runtime::CURRENT_ZK_SPECS[0];
+    spec.ligero_hash = config_hash;
+    spec.ligero_sig = config_sig;
+    spec.combined_hash = [0u8; 32];
+
+    let compressed = zstd::encode_all(
+        &archive_bytes[..],
+        mdoc_zk_circuits::config::K_ZSTD_LEVEL,
+    ).unwrap();
+
+    println!("Experimental circuit compiled");
+    println!("Hash config: {:?}", config_hash);
+    println!("Signature config: {:?}", config_sig);
+
+
+    let pkx = "0xb626aa933b215bc28f3b4924bf675454d2121f28bbb146415c181092f7fd9080";
+    let pky = "0xbf779357652d68be5ab61c667bde4ebff67b9efa2535c1138508fad656a2ab63";
+    let now = "2026-10-07T12:00:00Z";
+
+    println!("Running Google Longfellow prover...");
+
+    let mut rng = runtime_random::DeterministicRng::new(42);
+
+    let proof = run_mdoc_prover_inner(
+        &spec,
+        &compressed,
+        &mdoc,
+        pkx,
+        pky,
+        &transcript,
+        &req_attrs,
+        now,
+        doc_type,
+        &mut rng,
+    ).expect("Google prover rejected Peter credential");
+
+    println!("Proof generated: {} bytes", proof.len());
+
+
+    // The verifier knows the attribute name but not its real value.
+    let mut dummy_ssc = [0u8; 34];
+    dummy_ssc[0] = 0x58;
+    dummy_ssc[1] = 0x20;
+
+    let verifier_attrs = vec![
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"ssc",
+            &dummy_ssc,
+        )
+    ];
+
+    assert_ne!(ssc.cbor_value.as_slice(), &dummy_ssc);
+    println!("Verifier uses a dummy SSC, not Peter's real SSC");
+
+    let result = run_mdoc_verifier_inner(
+        &spec,
+        &compressed,
+        pkx,
+        pky,
+        &transcript,
+        &verifier_attrs,
+        now,
+        doc_type,
+        &proof,
+    );
+
+    println!("Verification result: {:?}", result);
+
+    assert!(result.is_ok(), "Google verifier rejected proof");
+
+    println!("PETER PRIVATE SSC VERIFIED BY GOOGLE LONGFELLOW");
+}
+
+#[test]
+fn test_peter_seed_commitment() {
+    use runtime_algebra::RuntimeNat;
+
+    let mdoc = std::fs::read(
+        "/tmp/peter-device-response.cbor"
+    ).unwrap();
+
+    let transcript = std::fs::read(
+        "/tmp/peter-transcript.cbor"
+    ).unwrap();
+
+    let doc_type = "eu.europa.ec.eudi.nym_auth.1";
+
+    let parsed =
+        mdoc_zk_circuits::cbor::mdoc::parse_mdoc::<RuntimeNat<4>>(
+            &mdoc, &transcript, doc_type
+        ).expect("Peter credential parsing failed");
+
+    let ssc = parsed.get_attribute(b"ssc")
+        .expect("SSC attribute missing");
+
+    let req_attrs = vec![
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"ssc",
+            &ssc.cbor_value,
+        )
+    ];
+
+    println!("SSC CBOR length: {}", ssc.cbor_value.len());
+
+
+    let profile = mdoc_zk_compile::LigeroProfile {
+        rateinv: 7,
+        nreq: 132,
+    };
+
+    let (archive_bytes, config_sig, config_hash) =
+        mdoc_zk_compile::compile_circuits(
+            1,
+            profile,
+            profile,
+        ).expect("Experimental circuit compilation failed");
+
+    // Experimental specification, not an official Google circuit ID.
+    // The inner prover/verifier functions use the supplied archive.
+    let mut spec = mdoc_zk_runtime::CURRENT_ZK_SPECS[0];
+    spec.ligero_hash = config_hash;
+    spec.ligero_sig = config_sig;
+    spec.combined_hash = [0u8; 32];
+
+    let compressed = zstd::encode_all(
+        &archive_bytes[..],
+        mdoc_zk_circuits::config::K_ZSTD_LEVEL,
+    ).unwrap();
+
+    println!("Experimental circuit compiled");
+    println!("Hash config: {:?}", config_hash);
+    println!("Signature config: {:?}", config_sig);
+
+
+    let pkx = "0xb626aa933b215bc28f3b4924bf675454d2121f28bbb146415c181092f7fd9080";
+    let pky = "0xbf779357652d68be5ab61c667bde4ebff67b9efa2535c1138508fad656a2ab63";
+    let now = "2026-10-07T12:00:00Z";
+
+    println!("Running Google Longfellow prover...");
+
+    let mut rng = runtime_random::DeterministicRng::new(42);
+
+    let secret_seed: [u8; 16] = [0x4a, 0x8f, 0x9c, 0x1d, 0x2e, 0x3f, 0x4a, 0x5b, 0x6c, 0x7d, 0x8e, 0x9f, 0x0a, 0x1b, 0x2c, 0x3d];
+
+    let proof = mdoc_zk_runtime::run_mdoc_prover_inner_with_seed(
+        &spec,
+        &compressed,
+        &mdoc,
+        pkx,
+        pky,
+        &transcript,
+        &req_attrs,
+        now,
+        doc_type,
+        &secret_seed,
+        &mut rng,
+    ).expect("Google prover rejected Peter credential");
+
+    println!("Proof generated: {} bytes", proof.len());
+
+
+    // The verifier knows the attribute name but not its real value.
+    let mut dummy_ssc = [0u8; 34];
+    dummy_ssc[0] = 0x58;
+    dummy_ssc[1] = 0x20;
+
+    let verifier_attrs = vec![
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"ssc",
+            &dummy_ssc,
+        )
+    ];
+
+    assert_ne!(ssc.cbor_value.as_slice(), &dummy_ssc);
+    println!("Verifier uses a dummy SSC, not Peter's real SSC");
+
+    let result = run_mdoc_verifier_inner(
+        &spec,
+        &compressed,
+        pkx,
+        pky,
+        &transcript,
+        &verifier_attrs,
+        now,
+        doc_type,
+        &proof,
+    );
+
+    println!("Verification result: {:?}", result);
+
+    assert!(result.is_ok(), "Google verifier rejected proof");
+
+    println!("PETER SEED COMMITMENT VERIFIED BY GOOGLE LONGFELLOW");
+
+    // Negative test: change one bit of the private seed.
+    let mut wrong_seed = secret_seed;
+    wrong_seed[0] ^= 1;
+
+    let mut bad_rng = runtime_random::DeterministicRng::new(43);
+
+    let bad_proof_result =
+        mdoc_zk_runtime::run_mdoc_prover_inner_with_seed(
+            &spec,
+            &compressed,
+            &mdoc,
+            pkx,
+            pky,
+            &transcript,
+            &req_attrs,
+            now,
+            doc_type,
+            &wrong_seed,
+            &mut bad_rng,
+        );
+
+    match bad_proof_result {
+        Err(err) => {
+            println!("Incorrect seed rejected during proving: {:?}", err);
+        }
+        Ok(bad_proof) => {
+            let bad_result = run_mdoc_verifier_inner(
+                &spec,
+                &compressed,
+                pkx,
+                pky,
+                &transcript,
+                &verifier_attrs,
+                now,
+                doc_type,
+                &bad_proof,
+            );
+
+            assert!(
+                bad_result.is_err(),
+                "Verifier accepted an incorrect private seed!"
+            );
+
+            println!("Incorrect seed proof rejected by verifier");
+        }
+    }
+}
+
+#[test]
+fn test_peter_pseudonym() {
+    use runtime_algebra::RuntimeNat;
+
+    let mdoc = std::fs::read(
+        "/tmp/peter-device-response.cbor"
+    ).unwrap();
+
+    let transcript = std::fs::read(
+        "/tmp/peter-transcript.cbor"
+    ).unwrap();
+
+    let doc_type = "eu.europa.ec.eudi.nym_auth.1";
+
+    let parsed =
+        mdoc_zk_circuits::cbor::mdoc::parse_mdoc::<RuntimeNat<4>>(
+            &mdoc, &transcript, doc_type
+        ).expect("Peter credential parsing failed");
+
+    let ssc = parsed.get_attribute(b"ssc")
+        .expect("SSC attribute missing");
+
+    let req_attrs = vec![
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"ssc",
+            &ssc.cbor_value,
+        )
+    ];
+
+    println!("SSC CBOR length: {}", ssc.cbor_value.len());
+
+
+    let profile = mdoc_zk_compile::LigeroProfile {
+        rateinv: 7,
+        nreq: 132,
+    };
+
+    let (archive_bytes, config_sig, config_hash) =
+        mdoc_zk_compile::compile_circuits(
+            1,
+            profile,
+            profile,
+        ).expect("Experimental circuit compilation failed");
+
+    // Experimental specification, not an official Google circuit ID.
+    // The inner prover/verifier functions use the supplied archive.
+    let mut spec = mdoc_zk_runtime::CURRENT_ZK_SPECS[0];
+    spec.ligero_hash = config_hash;
+    spec.ligero_sig = config_sig;
+    spec.combined_hash = [0u8; 32];
+
+    let compressed = zstd::encode_all(
+        &archive_bytes[..],
+        mdoc_zk_circuits::config::K_ZSTD_LEVEL,
+    ).unwrap();
+
+    println!("Experimental circuit compiled");
+    println!("Hash config: {:?}", config_hash);
+    println!("Signature config: {:?}", config_sig);
+
+
+    let pkx = "0xb626aa933b215bc28f3b4924bf675454d2121f28bbb146415c181092f7fd9080";
+    let pky = "0xbf779357652d68be5ab61c667bde4ebff67b9efa2535c1138508fad656a2ab63";
+    let now = "2026-10-07T12:00:00Z";
+
+    println!("Running Google Longfellow prover...");
+
+    let mut rng = runtime_random::DeterministicRng::new(42);
+
+
+    // Peter's credential and private fixture seed.
+    let secret_seed: [u8; 16] = [0x4a, 0x8f, 0x9c, 0x1d, 0x2e, 0x3f, 0x4a, 0x5b, 0x6c, 0x7d, 0x8e, 0x9f, 0x0a, 0x1b, 0x2c, 0x3d];
+
+    // V = SHA256("test-verifier.example").
+    let verifier_input: [u8; 32] = [0x1b, 0x34, 0xae, 0x4f, 0x92, 0x02, 0x54, 0x5e, 0x85, 0x80, 0xae, 0x38, 0x19, 0x74, 0x2c, 0x09, 0xf7, 0xe4, 0x27, 0xdc, 0xb2, 0x61, 0x40, 0xd6, 0x49, 0x31, 0xf1, 0x34, 0xf2, 0x7d, 0x2e, 0x46];
+
+    // N = SHA256(DST || seed || zero32 || V).
+    let pseudonym: [u8; 32] = [0x9d, 0x59, 0x4e, 0xa3, 0x3a, 0x88, 0x37, 0x4c, 0x1e, 0x46, 0xf4, 0xe1, 0x6f, 0x54, 0xc2, 0xe4, 0xb0, 0x48, 0xce, 0x5b, 0xb6, 0xc1, 0x0c, 0xd1, 0xbc, 0x64, 0x1d, 0xc4, 0x86, 0x44, 0xb2, 0x9c];
+
+    println!("Expected pseudonym: 9d594ea33a88374c1e46f4e16f54c2e4b048ce5bb6c10cd1bc641dc48644b29c");
+
+    let proof = mdoc_zk_runtime::run_mdoc_prover_inner_with_pseudonym(
+        &spec,
+        &compressed,
+        &mdoc,
+        pkx,
+        pky,
+        &transcript,
+        &req_attrs,
+        now,
+        doc_type,
+        &secret_seed,
+        &verifier_input,
+        &pseudonym,
+        &mut rng,
+    ).expect("Google prover rejected Peter credential");
+
+    println!("Proof generated: {} bytes", proof.len());
+
+
+    // The verifier knows the attribute name but not its real value.
+    let mut dummy_ssc = [0u8; 34];
+    dummy_ssc[0] = 0x58;
+    dummy_ssc[1] = 0x20;
+
+    let verifier_attrs = vec![
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"ssc",
+            &dummy_ssc,
+        )
+    ];
+
+    assert_ne!(ssc.cbor_value.as_slice(), &dummy_ssc);
+    println!("Verifier uses a dummy SSC, not Peter's real SSC");
+
+    let result = mdoc_zk_runtime::run_mdoc_verifier_inner_with_pseudonym(
+        &spec,
+        &compressed,
+        pkx,
+        pky,
+        &transcript,
+        &verifier_attrs,
+        now,
+        doc_type,
+        &proof,
+        &verifier_input,
+        &pseudonym,
+    );
+
+    println!("Verification result: {:?}", result);
+
+    assert!(result.is_ok(), "Google verifier rejected proof");
+
+    println!("PETER PRIVATE SSC VERIFIED BY GOOGLE LONGFELLOW");
+
+    // Negative test 1: incorrect public pseudonym.
+    let mut bad_n = pseudonym;
+    bad_n[0] ^= 1;
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_verifier_inner_with_pseudonym(
+        &spec,
+        &compressed,
+        pkx,
+        pky,
+        &transcript,
+        &verifier_attrs,
+        now,
+        doc_type,
+        &proof,
+        &verifier_input,
+        &bad_n,
+    ).is_err(),
+        "Verifier accepted incorrect pseudonym N"
+    );
+
+    println!("Incorrect pseudonym rejected");
+
+    // Negative test 2: incorrect verifier hash.
+    let mut bad_v = verifier_input;
+    bad_v[0] ^= 1;
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_verifier_inner_with_pseudonym(
+        &spec,
+        &compressed,
+        pkx,
+        pky,
+        &transcript,
+        &verifier_attrs,
+        now,
+        doc_type,
+        &proof,
+        &bad_v,
+        &pseudonym,
+    ).is_err(),
+        "Verifier accepted incorrect verifier hash V"
+    );
+
+    println!("Incorrect verifier hash rejected");
+
+}
