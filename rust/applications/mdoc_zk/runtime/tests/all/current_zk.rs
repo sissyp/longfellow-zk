@@ -1676,3 +1676,352 @@ fn test_peter_pseudonym() {
     println!("Incorrect verifier hash rejected");
 
 }
+
+#[test]
+fn test_peter_pseudonym_birthdate() {
+    use runtime_algebra::RuntimeNat;
+
+    let mdoc = std::fs::read(
+        "/tmp/peter-device-response.cbor"
+    ).unwrap();
+
+    let transcript = std::fs::read(
+        "/tmp/peter-transcript.cbor"
+    ).unwrap();
+
+    let doc_type = "eu.europa.ec.eudi.nym_auth.1";
+
+    let parsed =
+        mdoc_zk_circuits::cbor::mdoc::parse_mdoc::<RuntimeNat<4>>(
+            &mdoc, &transcript, doc_type
+        ).expect("Peter credential parsing failed");
+
+    let ssc = parsed.get_attribute(b"ssc")
+        .expect("SSC attribute missing");
+
+    let birth = parsed.get_attribute(b"birth_date")
+        .expect("birth_date attribute missing");
+
+    assert_eq!(
+        &birth.cbor_value[..4],
+        &[0xd9, 0x03, 0xec, 0x6a],
+    );
+
+    assert_eq!(
+        &birth.cbor_value[4..14],
+        b"2000-01-01",
+    );
+
+    let req_attrs = vec![
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"ssc",
+            &ssc.cbor_value,
+        ),
+        req_attr(
+            doc_type,
+            b"birth_date",
+            &birth.cbor_value,
+        ),
+    ];
+
+    println!("SSC CBOR length: {}", ssc.cbor_value.len());
+
+
+    let profile = mdoc_zk_compile::LigeroProfile {
+        rateinv: 7,
+        nreq: 132,
+    };
+
+    let (archive_bytes, config_sig, config_hash) =
+        mdoc_zk_compile::compile_circuits(
+            2,
+            profile,
+            profile,
+        ).expect("Experimental circuit compilation failed");
+
+    // Experimental specification, not an official Google circuit ID.
+    // The inner prover/verifier functions use the supplied archive.
+    let mut spec = mdoc_zk_runtime::CURRENT_ZK_SPECS[0];
+    spec.ligero_hash = config_hash;
+    spec.ligero_sig = config_sig;
+    spec.combined_hash = [0u8; 32];
+
+    let compressed = zstd::encode_all(
+        &archive_bytes[..],
+        mdoc_zk_circuits::config::K_ZSTD_LEVEL,
+    ).unwrap();
+
+    println!("Experimental circuit compiled");
+    println!("Hash config: {:?}", config_hash);
+    println!("Signature config: {:?}", config_sig);
+
+
+    let pkx = "0xb626aa933b215bc28f3b4924bf675454d2121f28bbb146415c181092f7fd9080";
+    let pky = "0xbf779357652d68be5ab61c667bde4ebff67b9efa2535c1138508fad656a2ab63";
+    let now = "2026-10-07T12:00:00Z";
+
+    println!("Running Google Longfellow prover...");
+
+    let mut rng = runtime_random::DeterministicRng::new(42);
+
+
+    // Peter's credential and private fixture seed.
+    let secret_seed: [u8; 16] = [0x4a, 0x8f, 0x9c, 0x1d, 0x2e, 0x3f, 0x4a, 0x5b, 0x6c, 0x7d, 0x8e, 0x9f, 0x0a, 0x1b, 0x2c, 0x3d];
+
+    // V = SHA256("test-verifier.example").
+    let verifier_input: [u8; 32] = [0x1b, 0x34, 0xae, 0x4f, 0x92, 0x02, 0x54, 0x5e, 0x85, 0x80, 0xae, 0x38, 0x19, 0x74, 0x2c, 0x09, 0xf7, 0xe4, 0x27, 0xdc, 0xb2, 0x61, 0x40, 0xd6, 0x49, 0x31, 0xf1, 0x34, 0xf2, 0x7d, 0x2e, 0x46];
+
+    // N = SHA256(DST || seed || zero32 || V).
+    let pseudonym: [u8; 32] = [0x9d, 0x59, 0x4e, 0xa3, 0x3a, 0x88, 0x37, 0x4c, 0x1e, 0x46, 0xf4, 0xe1, 0x6f, 0x54, 0xc2, 0xe4, 0xb0, 0x48, 0xce, 0x5b, 0xb6, 0xc1, 0x0c, 0xd1, 0xbc, 0x64, 0x1d, 0xc4, 0x86, 0x44, 0xb2, 0x9c];
+
+    println!("Expected pseudonym: 9d594ea33a88374c1e46f4e16f54c2e4b048ce5bb6c10cd1bc641dc48644b29c");
+
+    // Peter's DOB is 2000-01-01.
+    // These public bounds accept that date.
+    let cutoff = *b"1990-01-01";
+    let earliest = *b"2010-12-31";
+
+    let proof = mdoc_zk_runtime::
+        run_mdoc_prover_inner_with_pseudonym_and_birthdate(
+        &spec,
+        &compressed,
+        &mdoc,
+        pkx,
+        pky,
+        &transcript,
+        &req_attrs,
+        now,
+        doc_type,
+        &secret_seed,
+        &verifier_input,
+        &pseudonym,
+        &cutoff,
+        &earliest,
+        &mut rng,
+    ).expect("Google prover rejected Peter credential");
+
+    println!("Proof generated: {} bytes", proof.len());
+
+
+    // The verifier knows the attribute name but not its real value.
+    let mut dummy_ssc = [0u8; 34];
+    dummy_ssc[0] = 0x58;
+    dummy_ssc[1] = 0x20;
+
+    // A different, syntactically valid CBOR date.
+    // This is a placeholder, not Peter's actual DOB.
+    let mut dummy_birth = [0u8; 14];
+    dummy_birth[..4].copy_from_slice(
+        &[0xd9, 0x03, 0xec, 0x6a]
+    );
+    dummy_birth[4..].copy_from_slice(b"1999-01-01");
+
+    assert_ne!(birth.cbor_value.as_slice(), &dummy_birth);
+
+    let verifier_attrs = vec![
+        req_attr(
+            "eu.europa.ec.eudi.nym_auth.1",
+            b"ssc",
+            &dummy_ssc,
+        ),
+        req_attr(
+            doc_type,
+            b"birth_date",
+            &dummy_birth,
+        ),
+    ];
+
+    assert_ne!(ssc.cbor_value.as_slice(), &dummy_ssc);
+    println!("Verifier uses a dummy SSC, not Peter's real SSC");
+
+    let result = mdoc_zk_runtime::run_mdoc_verifier_inner_with_pseudonym_and_birthdate(
+        &spec,
+        &compressed,
+        pkx,
+        pky,
+        &transcript,
+        &verifier_attrs,
+        now,
+        doc_type,
+        &proof,
+        &verifier_input,
+        &pseudonym,
+        &cutoff,
+        &earliest,
+    );
+
+    println!("Verification result: {:?}", result);
+
+    assert!(result.is_ok(), "Google verifier rejected proof");
+
+    println!(
+        "PETER PSEUDONYM AND BIRTH-DATE INTERVAL VERIFIED"
+    );
+
+
+    // Incorrect lower bound supplied to the verifier.
+    let bad_cutoff = *b"2001-01-01";
+
+    let result_bad_cutoff =
+        mdoc_zk_runtime::run_mdoc_verifier_inner_with_pseudonym_and_birthdate(
+            &spec,
+            &compressed,
+            pkx,
+            pky,
+            &transcript,
+            &verifier_attrs,
+            now,
+            doc_type,
+            &proof,
+            &verifier_input,
+            &pseudonym,
+            &bad_cutoff,
+            &earliest,
+        );
+
+    assert!(
+        result_bad_cutoff.is_err(),
+        "Verifier accepted modified cutoff"
+    );
+
+    println!("Modified cutoff rejected");
+
+    // Incorrect upper bound supplied to the verifier.
+    let bad_earliest = *b"1999-12-31";
+
+    let result_bad_earliest =
+        mdoc_zk_runtime::run_mdoc_verifier_inner_with_pseudonym_and_birthdate(
+            &spec,
+            &compressed,
+            pkx,
+            pky,
+            &transcript,
+            &verifier_attrs,
+            now,
+            doc_type,
+            &proof,
+            &verifier_input,
+            &pseudonym,
+            &cutoff,
+            &bad_earliest,
+        );
+
+    assert!(
+        result_bad_earliest.is_err(),
+        "Verifier accepted modified earliest"
+    );
+
+    println!("Modified earliest rejected");
+
+    // BIRTHDATE PROVER NEGATIVE TESTS
+
+    // The authenticated DOB is 2000-01-01.
+
+    // Test 1: DOB is earlier than the lower bound.
+    let bad_lower = *b"2001-01-01";
+
+    let result = mdoc_zk_runtime::
+        run_mdoc_prover_inner_with_pseudonym_and_birthdate(
+            &spec,
+            &compressed,
+            &mdoc,
+            pkx,
+            pky,
+            &transcript,
+            &req_attrs,
+            now,
+            doc_type,
+            &secret_seed,
+            &verifier_input,
+            &pseudonym,
+            &bad_lower,
+            &earliest,
+            &mut rng,
+        );
+
+    assert!(
+        result.is_err(),
+        "Prover accepted DOB before cutoff"
+    );
+
+    println!("Prover rejected DOB below lower bound");
+
+    // Test 2: DOB is later than the upper bound.
+    let bad_upper = *b"1999-12-31";
+
+    let result = mdoc_zk_runtime::
+        run_mdoc_prover_inner_with_pseudonym_and_birthdate(
+            &spec,
+            &compressed,
+            &mdoc,
+            pkx,
+            pky,
+            &transcript,
+            &req_attrs,
+            now,
+            doc_type,
+            &secret_seed,
+            &verifier_input,
+            &pseudonym,
+            &cutoff,
+            &bad_upper,
+            &mut rng,
+        );
+
+    assert!(
+        result.is_err(),
+        "Prover accepted DOB after earliest"
+    );
+
+    println!("Prover rejected DOB above upper bound");
+
+    // Test 3: Both inclusive endpoints equal the DOB.
+    let exact_dob = *b"2000-01-01";
+
+    let result = mdoc_zk_runtime::
+        run_mdoc_prover_inner_with_pseudonym_and_birthdate(
+            &spec,
+            &compressed,
+            &mdoc,
+            pkx,
+            pky,
+            &transcript,
+            &req_attrs,
+            now,
+            doc_type,
+            &secret_seed,
+            &verifier_input,
+            &pseudonym,
+            &exact_dob,
+            &exact_dob,
+            &mut rng,
+        );
+
+    let exact_proof = result.expect(
+        "Prover rejected inclusive DOB endpoints"
+    );
+
+    mdoc_zk_runtime::
+        run_mdoc_verifier_inner_with_pseudonym_and_birthdate(
+            &spec,
+            &compressed,
+            pkx,
+            pky,
+            &transcript,
+            &verifier_attrs,
+            now,
+            doc_type,
+            &exact_proof,
+            &verifier_input,
+            &pseudonym,
+            &exact_dob,
+            &exact_dob,
+        ).expect(
+            "Verifier rejected inclusive DOB endpoints"
+        );
+
+    println!("Inclusive DOB endpoints accepted and verified");
+
+}
+

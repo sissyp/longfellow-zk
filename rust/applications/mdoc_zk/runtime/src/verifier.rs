@@ -74,6 +74,7 @@ pub fn run_mdoc_verifier_inner(
         doc_type,
         proof_bytes,
         None,
+        None,
     )
 }
 
@@ -103,6 +104,39 @@ pub fn run_mdoc_verifier_inner_with_pseudonym(
         doc_type,
         proof_bytes,
         Some((verifier_input, pseudonym)),
+        None,
+    )
+}
+
+/// Verify a pseudonym and private birth-date interval.
+#[allow(clippy::too_many_arguments)]
+pub fn run_mdoc_verifier_inner_with_pseudonym_and_birthdate(
+    zk_spec: &ZkSpecStruct,
+    circuits_compressed: &[u8],
+    pkx: &str,
+    pky: &str,
+    transcript: &[u8],
+    attrs: &[RequestedAttribute],
+    now: &str,
+    doc_type: &str,
+    proof_bytes: &[u8],
+    verifier_input: &[u8; 32],
+    pseudonym: &[u8; 32],
+    cutoff: &[u8; 10],
+    earliest: &[u8; 10],
+) -> Result<(), MdocVerifierErrorCode> {
+    run_mdoc_verifier_inner_impl(
+        zk_spec,
+        circuits_compressed,
+        pkx,
+        pky,
+        transcript,
+        attrs,
+        now,
+        doc_type,
+        proof_bytes,
+        Some((verifier_input, pseudonym)),
+        Some((cutoff, earliest)),
     )
 }
 
@@ -118,6 +152,7 @@ fn run_mdoc_verifier_inner_impl(
     doc_type: &str,
     proof_bytes: &[u8],
     pseudonym_scope: Option<(&[u8; 32], &[u8; 32])>,
+    birthdate_bounds: Option<(&[u8; 10], &[u8; 10])>,
 ) -> Result<(), MdocVerifierErrorCode> {
     let version = zk_spec.version;
     let (config_hash, config_sig) = crate::ligero_configs(zk_spec);
@@ -205,7 +240,25 @@ fn run_mdoc_verifier_inner_impl(
     let av_buf = tp.bytes(16);
     let av_val = u128::from_le_bytes(av_buf.try_into().unwrap());
 
-    let pub_inputs_hash = if let Some((v, n)) = pseudonym_scope {
+    let pub_inputs_hash =
+        if let (Some((v, n)), Some((cutoff, earliest))) =
+            (pseudonym_scope, birthdate_bounds)
+        {
+            crate::concrete::push_input_hash_with_pseudonym_and_birthdate(
+                version,
+                &gf2,
+                attrs,
+                now.as_bytes(),
+                &proof.macs,
+                av_val,
+                false,
+                doc_type.as_bytes(),
+                v,
+                n,
+                cutoff,
+                earliest,
+            )
+        } else if let Some((v, n)) = pseudonym_scope {
         crate::concrete::push_input_hash_with_pseudonym(
             version, &gf2, attrs, now.as_bytes(),
             &proof.macs, av_val, false, doc_type.as_bytes(),

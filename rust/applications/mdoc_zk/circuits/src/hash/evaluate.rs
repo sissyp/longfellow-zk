@@ -203,9 +203,20 @@ pub fn evaluate_given<L: compile_logic::LogicIO>(
         )
     });
 
+
+    let cutoff = std::array::from_fn(|i| {
+        bv.of_u64::<8>(u64::from(given.hash_input.cutoff[i]))
+    });
+
+    let earliest = std::array::from_fn(|i| {
+        bv.of_u64::<8>(u64::from(given.hash_input.earliest[i]))
+    });
+
     WireGiven {
         verifier_input,
         pseudonym,
+        cutoff,
+        earliest,
         seed_preimage,
         disclosed_attributes,
         now,

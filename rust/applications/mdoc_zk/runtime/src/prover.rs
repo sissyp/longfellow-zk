@@ -74,6 +74,7 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
         doc_type,
         None,
         None,
+        None,
         rng,
     )
 }
@@ -104,6 +105,7 @@ pub fn run_mdoc_prover_inner_with_seed<RNG: RandomEngine>(
         now,
         doc_type,
         Some(secret_seed),
+        None,
         None,
         rng,
     )
@@ -141,6 +143,43 @@ pub fn run_mdoc_prover_inner_with_pseudonym<RNG: RandomEngine>(
         doc_type,
         Some(secret_seed),
         Some((verifier_input, pseudonym)),
+        None,
+        rng,
+    )
+}
+
+/// Prove a pseudonym and private birth-date interval.
+#[allow(clippy::too_many_arguments)]
+pub fn run_mdoc_prover_inner_with_pseudonym_and_birthdate<RNG: RandomEngine>(
+    zk_spec: &ZkSpecStruct,
+    circuits_compressed: &[u8],
+    mdoc_bytes: &[u8],
+    pkx: &str,
+    pky: &str,
+    transcript: &[u8],
+    attrs: &[RequestedAttribute],
+    now: &str,
+    doc_type: &str,
+    secret_seed: &[u8; 16],
+    verifier_input: &[u8; 32],
+    pseudonym: &[u8; 32],
+    cutoff: &[u8; 10],
+    earliest: &[u8; 10],
+    rng: &mut RNG,
+) -> Result<Vec<u8>, MdocProverErrorCode> {
+    run_mdoc_prover_inner_impl(
+        zk_spec,
+        circuits_compressed,
+        mdoc_bytes,
+        pkx,
+        pky,
+        transcript,
+        attrs,
+        now,
+        doc_type,
+        Some(secret_seed),
+        Some((verifier_input, pseudonym)),
+        Some((cutoff, earliest)),
         rng,
     )
 }
@@ -157,6 +196,7 @@ fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
     doc_type: &str,
     secret_seed: Option<&[u8; 16]>,
     pseudonym_scope: Option<(&[u8; 32], &[u8; 32])>,
+    birthdate_bounds: Option<(&[u8; 10], &[u8; 10])>,
     rng: &mut RNG,
 ) -> Result<Vec<u8>, MdocProverErrorCode> {
     let version = zk_spec.version;
@@ -267,7 +307,25 @@ fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
         av_val,
         &mac_ap,
     );
-    let hash_pub_inputs = if let Some((v, n)) = pseudonym_scope {
+    let hash_pub_inputs =
+        if let (Some((v, n)), Some((cutoff, earliest))) =
+            (pseudonym_scope, birthdate_bounds)
+        {
+            crate::concrete::push_input_hash_with_pseudonym_and_birthdate(
+                version,
+                &gf2,
+                attrs,
+                now.as_bytes(),
+                &macs,
+                av_val,
+                false,
+                doc_type.as_bytes(),
+                v,
+                n,
+                cutoff,
+                earliest,
+            )
+        } else if let Some((v, n)) = pseudonym_scope {
         crate::concrete::push_input_hash_with_pseudonym(
             version, &gf2, attrs, now.as_bytes(),
             &macs, av_val, false, doc_type.as_bytes(),
@@ -279,6 +337,7 @@ fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
             &macs, av_val, false, doc_type.as_bytes(),
         )
     };
+
     let sig_pub_inputs = crate::push_input_sig(
         version,
         &p256,

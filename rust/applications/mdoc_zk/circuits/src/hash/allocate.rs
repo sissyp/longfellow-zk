@@ -69,6 +69,14 @@ pub fn allocate_given<L: LogicIO>(
     let pseudonym: [circuits_bitvec::V8<L>; 32] =
         std::array::from_fn(|_| bitvec_io.next::<8>(pos));
 
+
+    // Public birth-date interval endpoints (YYYY-MM-DD).
+    let cutoff: [circuits_bitvec::V8<L>; 10] =
+        std::array::from_fn(|_| bitvec_io.next::<8>(pos));
+
+    let earliest: [circuits_bitvec::V8<L>; 10] =
+        std::array::from_fn(|_| bitvec_io.next::<8>(pos));
+
     let issuer_sig_e = bitvec_io.next::<256>(pos);
     let preimage = MsoPreimageBytes {
         value: std::array::from_fn(|_| bitvec_io.next::<8>(pos)),
@@ -120,6 +128,8 @@ pub fn allocate_given<L: LogicIO>(
         attribute_given,
         verifier_input,
         pseudonym,
+        cutoff,
+        earliest,
         seed_preimage,
         mac_e,
         mac_device_pkx,

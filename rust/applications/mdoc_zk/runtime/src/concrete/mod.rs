@@ -178,6 +178,51 @@ pub fn push_input_hash_with_pseudonym(
     result
 }
 
+pub fn push_input_hash_with_pseudonym_and_birthdate(
+    version: usize,
+    gf2: &Gf2_128Field,
+    attrs: &[RequestedAttribute],
+    now_bytes: &[u8],
+    macs: &[u128; 6],
+    av: u128,
+    suppress_doc_type_check: bool,
+    expected_doc_type: &[u8],
+    verifier_input: &[u8; 32],
+    pseudonym: &[u8; 32],
+    cutoff: &[u8; 10],
+    earliest: &[u8; 10],
+) -> Vec<Gf2_128> {
+    let mut result = push_input_hash(
+        version,
+        gf2,
+        attrs,
+        now_bytes,
+        macs,
+        av,
+        suppress_doc_type_check,
+        expected_doc_type,
+    );
+
+    let mut builder = builder::AssignmentBuilder::new(gf2);
+
+    for &byte in verifier_input {
+        builder.push_v8(byte);
+    }
+
+    for &byte in pseudonym {
+        builder.push_v8(byte);
+    }
+
+    for &byte in cutoff {
+        builder.push_v8(byte);
+    }
+    for &byte in earliest {
+        builder.push_v8(byte);
+    }
+    result.extend(builder.into_inner());
+    result
+}
+
 pub fn push_input_sig<N: Nat<4>>(
     version: usize,
     p256: &P256Field,

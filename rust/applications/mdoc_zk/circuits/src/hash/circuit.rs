@@ -71,6 +71,10 @@ pub struct Given<L: LogicIO> {
     pub verifier_input: [V8<L>; 32],
     pub pseudonym: [V8<L>; 32],
 
+    // Public YYYY-MM-DD interval endpoints.
+    pub cutoff: [V8<L>; 10],
+    pub earliest: [V8<L>; 10],
+
     // Experimental private seed commitment.
     pub seed_preimage: [V8<L>; 64],
     pub mac_e: [L::Wire; 2],
@@ -88,7 +92,8 @@ pub struct Derived<L: LogicIO> {
 }
 
 pub struct MdocHash<'a, L: LogicIO>
-where L::F: MdocHashCompileField
+where
+    L::F: MdocHashCompileField,
 {
     pub(crate) logic: &'a L,
     pub(crate) mac_circuit: circuits_mac_gf128::circuit::MAC<'a, L>,
@@ -101,7 +106,8 @@ where L::F: MdocHashCompileField
 }
 
 impl<'a, L: LogicIO> MdocHash<'a, L>
-where L::F: MdocHashCompileField
+where
+    L::F: MdocHashCompileField,
 {
     pub fn new(logic: &'a L, _num_attrs: usize) -> Self {
         Self {
@@ -138,6 +144,7 @@ where L::F: MdocHashCompileField
                 self.assert_mso_value_digests(given, &preimage),
                 self.assert_attributes(given, derived, &preimage),
                 self.assert_seed_commitment(given, derived),
+                self.assert_birth_date_interval(given),
                 self.assert_pseudonym(
                     &given.seed_preimage,
                     &given.verifier_input,
@@ -148,37 +155,39 @@ where L::F: MdocHashCompileField
         )
     }
 
-
     // Experimental one-attribute circuit:
     // authenticated SSC == SHA256(private 16-byte seed).
-    fn assert_seed_commitment(
-        &self,
-        given: &Given<L>,
-        derived: &Derived<L>,
-    ) -> L::Assertions {
+    fn assert_seed_commitment(&self, given: &Given<L>, derived: &Derived<L>) -> L::Assertions {
         assert_eq!(
             given.disclosed_attributes.len(),
-            1,
-            "Experimental seed commitment expects one SSC attribute"
+            2,
+            "Expected SSC and birth_date attributes"
         );
 
         let attr = &given.disclosed_attributes[0];
         let value = &attr.expected_cbor_value;
 
+        // Attribute names are raw text bytes, not CBOR keys.
+        let name_check = self.assert_bytes_at(4, &attr.expected_name.data[0..4], b"\x63ssc");
+
+        let name_length = self.bv.assert_eq(
+            "ssc_name_length",
+            &attr.expected_name.len,
+            &self
+                .bv
+                .of_u64::<{ crate::mso_attribute::constants::K_ATTR_INDEX_BITS }>(4),
+        );
+
         // CBOR byte string of exactly 32 bytes:
         // 0x58 0x20 || SSC[32].
-        let prefix = self.assert_bytes_at(
-            2,
-            &value.data[0..2],
-            &[0x58, 0x20],
-        );
+        let prefix = self.assert_bytes_at(2, &value.data[0..2], &[0x58, 0x20]);
 
         let length = self.bv.assert_eq(
             "ssc_cbor_length",
             &value.len,
-            &self.bv.of_u64::<{
-                crate::mso_attribute::constants::K_ATTR_INDEX_BITS
-            }>(34),
+            &self
+                .bv
+                .of_u64::<{ crate::mso_attribute::constants::K_ATTR_INDEX_BITS }>(34),
         );
 
         // Construct the expected V256 digest from the
@@ -200,17 +209,13 @@ where L::F: MdocHashCompileField
 
         let sha = Sha256Msg::<L, 1>::new(self.logic);
 
-        let sha_assertion = sha.assert_message_hash(
-            &sha_given,
-            &derived.seed_sha_derived,
-        );
+        let sha_assertion = sha.assert_message_hash(&sha_given, &derived.seed_sha_derived);
 
         self.logic.assert_all(
             "authenticated_seed_commitment",
-            &[prefix, length, sha_assertion],
+            &[name_check, name_length, prefix, length, sha_assertion],
         )
     }
-
 
     /// Peter's verifier-scoped pseudonym:
     ///
@@ -228,8 +233,7 @@ where L::F: MdocHashCompileField
         expected_pseudonym: &[V8<L>; 32],
         sha_derived: &circuits_sha256msg::Derived<L>,
     ) -> L::Assertions {
-        const DST: &[u8] =
-            b"nym_auth/v1/known-offender-matching-ssc";
+        const DST: &[u8] = b"nym_auth/v1/known-offender-matching-ssc";
 
         // 39 + 16 + 32 + 32 = 119 bytes.
         const MESSAGE_LENGTH: usize = 119;
@@ -246,9 +250,7 @@ where L::F: MdocHashCompileField
         // seed_preimage[0..16] contains the original
         // 16-byte seed. Its remaining bytes represent
         // SHA-256 padding for the commitment hash.
-        padded_preimage.extend(
-            seed_preimage[..16].iter().cloned()
-        );
+        padded_preimage.extend(seed_preimage[..16].iter().cloned());
 
         // 3. Peter's fixed 32-byte zero user input.
         for _ in 0..32 {
@@ -256,14 +258,9 @@ where L::F: MdocHashCompileField
         }
 
         // 4. Public verifier input V.
-        padded_preimage.extend(
-            verifier_input.iter().cloned()
-        );
+        padded_preimage.extend(verifier_input.iter().cloned());
 
-        assert_eq!(
-            padded_preimage.len(),
-            MESSAGE_LENGTH
-        );
+        assert_eq!(padded_preimage.len(), MESSAGE_LENGTH);
 
         // SHA-256 padding.
         padded_preimage.push(self.bv.of_u8(0x80));
@@ -286,26 +283,125 @@ where L::F: MdocHashCompileField
             let byte_index = 31 - j / 8;
             let bit_index = j % 8;
 
-            expected_pseudonym[byte_index]
-                .as_array()[bit_index]
-                .clone()
+            expected_pseudonym[byte_index].as_array()[bit_index].clone()
         });
 
         let sha_given = circuits_sha256msg::circuit::Given {
             padded_preimage,
             nblocks: self.bv.of_u64::<2>(2),
-            length_bytes: self.bv.of_u64::<64>(
-                MESSAGE_LENGTH as u64
-            ),
+            length_bytes: self.bv.of_u64::<64>(MESSAGE_LENGTH as u64),
             expected_hash,
         };
 
         let sha = Sha256Msg::<L, 2>::new(self.logic);
 
-        sha.assert_message_hash(
-            &sha_given,
-            sha_derived,
-        )
+        sha.assert_message_hash(&sha_given, sha_derived)
+    }
+
+    // Private authenticated birth-date interval:
+    //
+    //     cutoff <= DOB <= earliest
+    //
+    // Attribute 0: SSC
+    // Attribute 1: birth_date
+    fn assert_birth_date_interval(&self, given: &Given<L>) -> L::Assertions {
+        assert_eq!(
+            given.disclosed_attributes.len(),
+            2,
+            "Expected exactly SSC and birth_date"
+        );
+
+        let attr = &given.disclosed_attributes[1];
+        let value = &attr.expected_cbor_value;
+
+        // The second attribute must be named "birth_date".
+        let name_check = self.assert_bytes_at(11, &attr.expected_name.data[0..11], b"\x6abirth_date");
+
+        let name_length = self.bv.assert_eq(
+            "birth_date_name_length",
+            &attr.expected_name.len,
+            &self
+                .bv
+                .of_u64::<{ crate::mso_attribute::constants::K_ATTR_INDEX_BITS }>(11),
+        );
+
+        // CBOR tag 1004 followed by a 10-byte text string:
+        // D9 03 EC 6A YYYY-MM-DD
+        let prefix_check = self.assert_bytes_at(4, &value.data[0..4], &[0xd9, 0x03, 0xec, 0x6a]);
+
+        let value_length = self.bv.assert_eq(
+            "birth_date_cbor_length",
+            &value.len,
+            &self
+                .bv
+                .of_u64::<{ crate::mso_attribute::constants::K_ATTR_INDEX_BITS }>(14),
+        );
+
+        // Private date from the issuer-authenticated CBOR value.
+        let dob = &value.data[4..14];
+
+        let dash_4 = self
+            .bv
+            .assert_eq("birth_date_dash_4", &dob[4], &self.bv.of_u8(b'-'));
+
+        let dash_7 = self
+            .bv
+            .assert_eq("birth_date_dash_7", &dob[7], &self.bv.of_u8(b'-'));
+
+        // Enforce ASCII decimal digits.
+        let zero = [self.bv.of_u8(b'0')];
+        let nine = [self.bv.of_u8(b'9')];
+
+        let mut digit_assertions = Vec::new();
+
+        for i in [0, 1, 2, 3, 5, 6, 8, 9] {
+            let digit = &dob[i..i + 1];
+
+            let at_least_zero = self.cmp_helper.leq(&zero, digit);
+
+            let at_most_nine = self.cmp_helper.leq(digit, &nine);
+
+            digit_assertions.push(
+                self.boolean
+                    .assert_true("birth_date_digit_lower", &at_least_zero),
+            );
+
+            digit_assertions.push(
+                self.boolean
+                    .assert_true("birth_date_digit_upper", &at_most_nine),
+            );
+        }
+
+        // Lexicographic comparison is equivalent to
+        // chronological comparison for canonical YYYY-MM-DD
+        // dates.
+        let lower_ok = self.cmp_helper.leq(&given.cutoff, dob);
+
+        let upper_ok = self.cmp_helper.leq(dob, &given.earliest);
+
+        let lower_assertion = self
+            .boolean
+            .assert_true("birth_date_lower_bound", &lower_ok);
+
+        let upper_assertion = self
+            .boolean
+            .assert_true("birth_date_upper_bound", &upper_ok);
+
+        let mut assertions = vec![
+            name_check,
+            name_length,
+            prefix_check,
+            value_length,
+            dash_4,
+            dash_7,
+            lower_assertion,
+            upper_assertion,
+        ];
+
+        assertions.extend(digit_assertions);
+
+        self.logic
+            .assert_all("authenticated_birth_date_interval", &assertions)
     }
 
     fn assert_mso_sha256_hash(

@@ -173,6 +173,19 @@ where
             plucker_v8,
         );
 
+
+    // Public birth-date interval endpoints, encoded as YYYY-MM-DD.
+    // cutoff <= private DOB <= earliest.
+    let (cutoff, _) = allocator
+        .allocate_plucked_v8_array::<10, { K_HASH_V8_BIT_PLUCKER }>(
+            plucker_v8,
+        );
+
+    let (earliest, _) = allocator
+        .allocate_plucked_v8_array::<10, { K_HASH_V8_BIT_PLUCKER }>(
+            plucker_v8,
+        );
+
     let pub_inputs_count = allocator.pos;
 
     // Private CBOR values, allocated immediately after
@@ -264,6 +277,8 @@ where
         attribute_given,
         verifier_input,
         pseudonym,
+        cutoff,
+        earliest,
         seed_preimage,
         mac_e,
         mac_device_pkx,

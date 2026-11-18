@@ -44,6 +44,10 @@ pub struct HashInput<N = CompileNat<4>> {
     // Public pseudonym N.
     pub pseudonym: [u8; 32],
 
+    // Public birth-date interval endpoints.
+    pub cutoff: [u8; 10],
+    pub earliest: [u8; 10],
+
     pub now: Vec<u8>,
     pub suppress_doc_type_check: bool,
     pub expected_doc_type: Vec<u8>,
@@ -354,6 +358,10 @@ pub fn hash_input_of_parsed_mdoc<const W: usize, N: Nat<W>>(
         secret_seed,
         verifier_input,
         pseudonym,
+
+        // Auxiliary test defaults only.
+        cutoff: *b"1900-01-01",
+        earliest: *b"2100-12-31",
         now: now.as_bytes().to_vec(),
         suppress_doc_type_check: false,
         expected_doc_type: parsed.doc_type.as_bytes().to_vec(),
