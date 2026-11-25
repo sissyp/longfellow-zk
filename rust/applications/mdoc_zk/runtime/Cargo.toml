@@ -65,3 +65,7 @@ harness = false
 [[bin]]
 name = "convert_circuits"
 path = "src/bin/convert_circuits.rs"
+
+[[bin]]
+name = "dob_cli"
+path = "src/bin/dob_cli.rs"

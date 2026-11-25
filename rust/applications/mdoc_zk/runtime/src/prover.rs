@@ -265,7 +265,22 @@ fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
         runtime_algebra::subfield::BinarySubfield::new(&core_algebra::proto::GF2_16_BASIS_V1);
     let make_interpolator_hash = Lch14InterpolatorFactory::new(&gf2, &sf_hash);
 
-    let (c_sig, c_hash) = crate::proto::decompress_circuits(circuits_compressed, &p256, &gf2)
+    let circuits_result =
+        if birthdate_bounds.is_some() && pseudonym_scope.is_none() {
+            crate::proto::decompress_circuits_checked(
+                circuits_compressed,
+                &p256,
+                &gf2,
+                &zk_spec.combined_hash,
+                version,
+            )
+        } else {
+            crate::proto::decompress_circuits(
+                circuits_compressed, &p256, &gf2,
+            )
+        };
+
+    let (c_sig, c_hash) = circuits_result
         .map_err(|_| MdocProverErrorCode::CircuitParsingFailure)?;
 
     let parsed: ParsedMdoc<runtime_algebra::RuntimeNat<4>> =

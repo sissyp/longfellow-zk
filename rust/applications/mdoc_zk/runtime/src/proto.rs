@@ -93,6 +93,106 @@ impl<F1: RuntimeField<2> + SerializableField, F2: RuntimeField<4> + Serializable
 
 use std::io::BufRead;
 
+
+/// Strict circuit archive loading for independently identified circuits.
+///
+/// Checks the archive's expected identity and the actual serialized
+/// circuit contents before returning either circuit.
+pub fn decompress_circuits_checked(
+    compressed: &[u8],
+    p256: &runtime_algebra::p256::P256Field,
+    gf2: &runtime_algebra::gf2_128::Gf2_128Field,
+    expected_combined_id: &[u8; 32],
+    expected_version: usize,
+) -> Result<
+    (
+        core_proto::circuit::Circuit<runtime_algebra::p256::P256Field>,
+        core_proto::circuit::Circuit<runtime_algebra::gf2_128::Gf2_128Field>,
+    ),
+    String,
+> {
+    use std::io::BufRead;
+
+    let decoder = zstd::stream::read::Decoder::new(compressed)
+        .map_err(|e| format!("Invalid compressed archive: {e}"))?;
+
+    let mut stream = std::io::BufReader::new(decoder);
+
+    // DOB-only deployment requires a structured LFA2 archive.
+    if !stream
+        .fill_buf()
+        .map_err(|e| format!("Cannot read archive: {e}"))?
+        .starts_with(core_proto::archive::LFA2_MAGIC)
+    {
+        return Err("Expected LFA2 circuit archive".into());
+    }
+
+    let archive =
+        core_proto::archive::CircuitArchive::from_stream(&mut stream)?;
+
+    if archive.circuit_version != expected_version as u32 {
+        return Err("Circuit version mismatch".into());
+    }
+
+    if archive.entries.len() != 2
+        || archive.entries[0].name != "sig"
+        || archive.entries[1].name != "hash"
+    {
+        return Err("Unexpected circuit archive entries".into());
+    }
+
+    let recomputed =
+        core_proto::archive::compute_combined_id(&archive.entries);
+
+    if recomputed != archive.combined_id {
+        return Err("Archive combined ID is inconsistent".into());
+    }
+
+    if &recomputed != expected_combined_id {
+        return Err("Archive does not match expected circuit ID".into());
+    }
+
+    if !stream
+        .fill_buf()
+        .map_err(|e| format!("Cannot finish reading archive: {e}"))?
+        .is_empty()
+    {
+        return Err("Trailing data in circuit archive".into());
+    }
+
+    let sig_entry = &archive.entries[0];
+    let hash_entry = &archive.entries[1];
+
+    let reader_sig =
+        core_proto::reader::CircuitReader::new(
+            p256, core_proto::FieldID::P256,
+        );
+
+    let reader_hash =
+        core_proto::reader::CircuitReader::new(
+            gf2, core_proto::FieldID::Gf2_128,
+        );
+
+    // true: recompute the circuit ID from its actual contents.
+    let (c_sig, sig_remaining) =
+        reader_sig.from_bytes(&sig_entry.payload, true)?;
+
+    let (c_hash, hash_remaining) =
+        reader_hash.from_bytes(&hash_entry.payload, true)?;
+
+    if !sig_remaining.is_empty() || !hash_remaining.is_empty() {
+        return Err("Trailing data in serialized circuit".into());
+    }
+
+    if c_sig.id != sig_entry.circuit_id
+        || c_hash.id != hash_entry.circuit_id
+    {
+        return Err("Circuit ID differs from archive entry".into());
+    }
+
+    Ok((c_sig, c_hash))
+}
+
 pub fn decompress_circuits(
     compressed: &[u8],
     p256: &runtime_algebra::p256::P256Field,

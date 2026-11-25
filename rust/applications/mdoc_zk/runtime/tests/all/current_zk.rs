@@ -2094,12 +2094,57 @@ fn test_google_dob_only() {
     let mut spec = mdoc_zk_runtime::CURRENT_ZK_SPECS[0];
     spec.ligero_hash = config_hash;
     spec.ligero_sig = config_sig;
-    spec.combined_hash = [0u8; 32];
+    // Use the canonical combined ID of the generated archive.
+    let circuit_archive =
+        core_proto::archive::CircuitArchive::from_bytes(&archive)
+            .expect("Invalid DOB-only circuit archive");
+
+    spec.combined_hash = circuit_archive.combined_id;
+
+    assert_eq!(
+        spec.combined_hash,
+        core_proto::archive::compute_combined_id(
+            &circuit_archive.entries
+        ),
+        "Circuit archive identifier mismatch"
+    );
+
+    assert_ne!(spec.combined_hash, [0u8; 32]);
+
+    println!(
+        "DOB-only combined circuit ID: {}",
+        spec.combined_hash_hex()
+    );
 
     let compressed = zstd::encode_all(
         &archive[..],
         mdoc_zk_circuits::config::K_ZSTD_LEVEL,
     ).unwrap();
+
+
+    // Export the independent DOB-only circuit archive.
+    if let Ok(export_dir) = std::env::var("LONGFELLOW_DOB_EXPORT_DIR") {
+        let dir = std::path::Path::new(&export_dir);
+        std::fs::create_dir_all(dir).unwrap();
+
+        std::fs::write(dir.join("circuits.zst"), &compressed).unwrap();
+        std::fs::write(dir.join("circuits.lfa"), &archive).unwrap();
+
+        std::fs::write(
+            dir.join("circuit-id.txt"),
+            format!("{}\\n", spec.combined_hash_hex()),
+        ).unwrap();
+
+        std::fs::write(
+            dir.join("config.txt"),
+            format!(
+                "version: {}\\nattributes: 1\\nhash: {:?}\\nsignature: {:?}\\n",
+                spec.version, config_hash, config_sig,
+            ),
+        ).unwrap();
+
+        println!("DOB-only archive exported to {}", dir.display());
+    }
 
     let pkx = "0xb626aa933b215bc28f3b4924bf675454d2121f28bbb146415c181092f7fd9080";
     let pky = "0xbf779357652d68be5ab61c667bde4ebff67b9efa2535c1138508fad656a2ab63";
@@ -2228,6 +2273,59 @@ fn test_google_dob_only() {
     println!("DOB above interval rejected");
 
     println!("DOB-ONLY SECURITY REGRESSION TESTS PASSED");
+
+
+    // CIRCUIT ID TEST: Incorrect expected specification.
+    let mut incorrect_spec = spec;
+    incorrect_spec.combined_hash[0] ^= 1;
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_verifier_inner_with_birthdate(
+            &incorrect_spec, &compressed, pkx, pky,
+            &transcript, &verifier_attrs, now, doc_type,
+            &proof, &cutoff, &earliest,
+        ).is_err(),
+        "Verifier accepted wrong circuit identifier"
+    );
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_prover_inner_with_birthdate(
+            &incorrect_spec, &compressed, &mdoc, pkx, pky,
+            &transcript, &req_attrs, now, doc_type,
+            &cutoff, &earliest, &mut rng,
+        ).is_err(),
+        "Prover accepted wrong circuit identifier"
+    );
+
+    // CIRCUIT ID TEST: Modified circuit payload.
+    let mut modified_archive =
+        core_proto::archive::CircuitArchive::from_bytes(&archive)
+            .expect("Cannot parse DOB archive");
+
+    let hash_entry = modified_archive
+        .entries
+        .iter_mut()
+        .find(|e| e.name == "hash")
+        .expect("Missing hash circuit");
+
+    let last = hash_entry.payload.len() - 1;
+    hash_entry.payload[last] ^= 1;
+
+    let modified_compressed = zstd::encode_all(
+        &modified_archive.to_bytes()[..],
+        mdoc_zk_circuits::config::K_ZSTD_LEVEL,
+    ).unwrap();
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_verifier_inner_with_birthdate(
+            &spec, &modified_compressed, pkx, pky,
+            &transcript, &verifier_attrs, now, doc_type,
+            &proof, &cutoff, &earliest,
+        ).is_err(),
+        "Verifier accepted modified circuit contents"
+    );
+
+    println!("DOB-ONLY CIRCUIT ID TESTS PASSED");
 
     println!("DOB-ONLY NEGATIVE VERIFIER TESTS PASSED");
 }
