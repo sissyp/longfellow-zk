@@ -36,14 +36,6 @@ pub struct HashMac {
 #[derive(Clone, Debug)]
 pub struct HashInput<N = CompileNat<4>> {
     pub attrs: Vec<AttrInput>,
-    pub secret_seed: [u8; 16],
-
-    // Public verifier hash V = SHA256(client_id).
-    pub verifier_input: [u8; 32],
-
-    // Public pseudonym N.
-    pub pseudonym: [u8; 32],
-
     // Public birth-date interval endpoints.
     pub cutoff: [u8; 10],
     pub earliest: [u8; 10],
@@ -99,19 +91,12 @@ pub struct ConcreteGiven<N = CompileNat<4>> {
     pub dev_key_info_offset_in_preimage: u16,
     pub value_digests_offset_in_preimage: u16,
     pub attribute_given: Vec<AttrGiven>,
-    pub seed_preimage: [u8; 64],
     pub mac_ap: [[u128; 2]; 3],
 }
 
 #[derive(Clone, Debug)]
 pub struct ConcreteDerived {
     pub attribute_derived: Vec<AttrDerived>,
-    pub seed_sha_derived: circuits_sha256msg::concrete::ConcreteDerived,
-
-    // Two-block SHA256 pseudonym witness.
-    pub pseudonym_sha_derived:
-        circuits_sha256msg::concrete::ConcreteDerived,
-
     pub sha_derived: circuits_sha256msg::concrete::ConcreteDerived,
 }
 
@@ -200,18 +185,7 @@ pub fn given<const W: usize, N: Nat<W>>(
     let value_digests_offset_in_preimage =
         preimage_base_offset + hash_input.value_digests_offset as u16;
 
-    let seed_sha_in = circuits_sha256msg::concrete::given(
-        &hash_input.secret_seed,
-        &circuits_sha256::constants::INITIAL,
-        1,
-    ).expect("16-byte seed must fit in one SHA-256 block");
-
-    let seed_preimage: [u8; 64] =
-        seed_sha_in.padded_preimage.try_into()
-            .expect("One SHA-256 block has 64 bytes");
-
     ConcreteGiven {
-        seed_preimage,
         mac_ap: mac_input.mac_ap,
         hash_input,
         mac_input: mac_input.clone(),
@@ -252,50 +226,8 @@ pub fn derived<const W: usize, N: Nat<W>>(given: &ConcreteGiven<N>) -> ConcreteD
         });
     }
 
-    let seed_sha_derived =
-        circuits_sha256msg::concrete::ConcreteDerived {
-            sha_derived: circuits_sha256msg::concrete::sha256_msg_derived(
-                &given.seed_preimage,
-                &circuits_sha256::constants::INITIAL,
-                1,
-            ),
-        };
-
-    // Peter's verifier-scoped pseudonym:
-    // SHA256(DST || secret_seed || zero32 || V).
-    const DST: &[u8] =
-        b"nym_auth/v1/known-offender-matching-ssc";
-
-    let mut pseudonym_message = Vec::with_capacity(119);
-    pseudonym_message.extend_from_slice(DST);
-    pseudonym_message.extend_from_slice(
-        &given.hash_input.secret_seed
-    );
-    pseudonym_message.extend_from_slice(&[0u8; 32]);
-    pseudonym_message.extend_from_slice(
-        &given.hash_input.verifier_input
-    );
-
-    assert_eq!(pseudonym_message.len(), 119);
-
-    let pseudonym_sha_in =
-        circuits_sha256msg::concrete::given(
-            &pseudonym_message,
-            &circuits_sha256::constants::INITIAL,
-            2,
-        )
-        .expect("Invalid pseudonym SHA-256 message");
-
-    let pseudonym_sha_derived =
-        circuits_sha256msg::concrete::derived(
-            &pseudonym_sha_in,
-            2,
-        );
-
     ConcreteDerived {
         attribute_derived: attribute_witnesses,
-        seed_sha_derived,
-        pseudonym_sha_derived,
         sha_derived: cose_sha_derived,
     }
 }
@@ -304,7 +236,6 @@ pub fn hash_input_of_parsed_mdoc<const W: usize, N: Nat<W>>(
     parsed: &crate::cbor::mdoc::ParsedMdoc<N>,
     req_attr_ids: &[&[u8]],
     now: &str,
-    secret_seed: [u8; 16],
 ) -> HashInput<N> {
     let attrs = req_attr_ids
         .iter()
@@ -325,39 +256,8 @@ pub fn hash_input_of_parsed_mdoc<const W: usize, N: Nat<W>>(
         })
         .collect();
 
-    // Deterministic auxiliary test fixture.
-    // The real runtime API will receive V and N explicitly.
-    let verifier_input = [0u8; 32];
-
-    const DST: &[u8] =
-        b"nym_auth/v1/known-offender-matching-ssc";
-
-    let mut message = Vec::with_capacity(119);
-    message.extend_from_slice(DST);
-    message.extend_from_slice(&secret_seed);
-    message.extend_from_slice(&[0u8; 32]);
-    message.extend_from_slice(&verifier_input);
-
-    let sha = circuits_sha256msg::concrete::given(
-        &message,
-        &circuits_sha256::constants::INITIAL,
-        2,
-    )
-    .expect("Invalid auxiliary pseudonym message");
-
-    let pseudonym: [u8; 32] = sha
-        .expected_hash
-        .iter()
-        .flat_map(|word| word.to_be_bytes())
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("SHA-256 output must be 32 bytes");
-
     HashInput {
         attrs,
-        secret_seed,
-        verifier_input,
-        pseudonym,
 
         // Auxiliary test defaults only.
         cutoff: *b"1900-01-01",

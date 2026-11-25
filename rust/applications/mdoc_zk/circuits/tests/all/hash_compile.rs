@@ -44,7 +44,7 @@ fn compile_hash_circuit<FC>(
 where FC: MdocHashCompileField {
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now);
     let mut pos = compile_logic::K_FIRST_WIRE_POSITION;
     let num_attrs = hash_input.attrs.len();
 
@@ -234,7 +234,7 @@ fn test_mdoc_zk_circuits_hash_for_field<
 ) {
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now);
     let num_attrs = hash_input.attrs.len();
 
     let (_circuit, stats, _symbols) = compile_compiler::compile(fc, |iologic| {
@@ -273,7 +273,7 @@ fn test_compile_mdoc_hash_corruptors() {
 
     let (_, parsed, now) =
         parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now);
     let mac_input = HashMac {
         mac_av: 0x112233445566778899aabbccddeeff00,
         mac_ap: [[
@@ -353,10 +353,12 @@ fn test_serialize_and_verify_mdoc_hash_circuit() {
 
     compile_compiler::dump_stats("mdoc_hash_serialized", &circuit, &stats);
 
+    // Reference ID for this test's DOB hash circuit configuration.
     let expected_id: [u8; 32] = [
-        0x7f, 0xec, 0x95, 0x56, 0x51, 0x4f, 0x03, 0xfb, 0x2f, 0x83, 0x3c, 0xf2, 0xe5, 0xea, 0x7e,
-        0x87, 0x3e, 0x06, 0x2b, 0x4d, 0x83, 0x25, 0x1e, 0x7b, 0x91, 0x4e, 0x36, 0xfc, 0x43, 0xbe,
-        0x97, 0x26,
+        0x77, 0xa6, 0xdd, 0x26, 0xb9, 0x68, 0xc7, 0x7d,
+        0x78, 0x08, 0xee, 0x00, 0x97, 0x49, 0xba, 0x21,
+        0xb9, 0x19, 0x75, 0xab, 0xc0, 0x68, 0x95, 0xf4,
+        0xa6, 0x2b, 0x9c, 0xca, 0x4d, 0x1c, 0x01, 0xec,
     ];
     assert_eq!(
         circuit.id, expected_id,
@@ -419,7 +421,7 @@ fn test_paranoid_hash_input_subsets_and_permutations() {
 
         for p in perms {
             let req_ids: Vec<&[u8]> = p.iter().map(|&idx| four_ids[idx]).collect();
-            let input = hash_input_of_parsed_mdoc(&parsed, &req_ids, now, [0u8; 16]);
+            let input = hash_input_of_parsed_mdoc(&parsed, &req_ids, now);
             assert_eq!(input.attrs.len(), req_ids.len());
             for (i, &req_id) in req_ids.iter().enumerate() {
                 let attr_name_bytes = &input.attrs[i].expected_name;

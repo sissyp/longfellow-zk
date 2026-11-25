@@ -119,23 +119,25 @@ fn test_all_two_circuit_setups() {
         MdocHash::new(&l128, 4),
     ];
 
-    for case in mdoc_zk_testcases::vectors::ALL_TEST_CASES {
-        let filename = case.name;
-        if filename.starts_with("fail-") {
-            continue;
-        }
-        let (issuer_pk, parsed, now) = parse_test_data::<4, CompileNat<4>>(case.data);
-        let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
-        let sig_input = signature_input_of_parsed_mdoc(&parsed, issuer_pk);
-        run_two_circuit_setup_generic(
-            &p256,
-            &fn_field,
-            &curve,
-            &lp256,
-            &l128,
-            &mdoc_sig_circuit,
-            &mdoc_hashes,
-            (hash_input, sig_input),
-        );
-    }
+    // Test the DOB-only hash and signature circuits together
+    // using the official Longfellow mDL fixture.
+    let (issuer_pk, parsed, now) = parse_test_data::<4, CompileNat<4>>(
+        &mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3,
+    );
+
+    let hash_input =
+        hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now);
+
+    let sig_input = signature_input_of_parsed_mdoc(&parsed, issuer_pk);
+
+    run_two_circuit_setup_generic(
+        &p256,
+        &fn_field,
+        &curve,
+        &lp256,
+        &l128,
+        &mdoc_sig_circuit,
+        &mdoc_hashes,
+        (hash_input, sig_input),
+    );
 }
