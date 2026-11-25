@@ -31,36 +31,6 @@ pub fn push_witness_hash<N: Nat<4>>(
     parsed: &ParsedMdoc<N>,
     mac_ap: &[[u128; 2]; 3],
 ) -> Result<Vec<Gf2_128>, MdocProverErrorCode> {
-    push_witness_hash_with_seed(
-        gf2, req_attrs, parsed, mac_ap, None,
-    )
-}
-
-pub fn push_witness_hash_with_seed<N: Nat<4>>(
-    gf2: &Gf2_128Field,
-    req_attrs: &[RequestedAttribute],
-    parsed: &ParsedMdoc<N>,
-    mac_ap: &[[u128; 2]; 3],
-    secret_seed: Option<&[u8; 16]>,
-) -> Result<Vec<Gf2_128>, MdocProverErrorCode> {
-    push_witness_hash_with_seed_and_verifier(
-        gf2,
-        req_attrs,
-        parsed,
-        mac_ap,
-        secret_seed,
-        &[0u8; 32],
-    )
-}
-
-pub fn push_witness_hash_with_seed_and_verifier<N: Nat<4>>(
-    gf2: &Gf2_128Field,
-    req_attrs: &[RequestedAttribute],
-    parsed: &ParsedMdoc<N>,
-    mac_ap: &[[u128; 2]; 3],
-    secret_seed: Option<&[u8; 16]>,
-    verifier_input: &[u8; 32],
-) -> Result<Vec<Gf2_128>, MdocProverErrorCode> {
     let mut builder = AssignmentBuilder::new(gf2);
 
     // Private attribute CBOR values appear first in the
@@ -69,10 +39,7 @@ pub fn push_witness_hash_with_seed_and_verifier<N: Nat<4>>(
         for i in 0..64 {
             builder.push_v8(*la.cbor_value.get(i).unwrap_or(&0));
         }
-        builder.push_bits_len(
-            la.cbor_value.len() as u64,
-            K_ATTR_LEN_BITS,
-        );
+        builder.push_bits_len(la.cbor_value.len() as u64, K_ATTR_LEN_BITS);
     }
 
     // 1. issuer_sig_digest (plucked V256)

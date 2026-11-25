@@ -15,5 +15,5 @@
 pub(crate) mod private;
 pub(crate) mod public;
 
-pub(crate) use private::{push_witness_hash, push_witness_hash_with_seed, push_witness_hash_with_seed_and_verifier, push_witness_sig};
+pub(crate) use private::{push_witness_hash, push_witness_sig};
 pub(crate) use public::{push_modern_input_hash, push_modern_input_sig};

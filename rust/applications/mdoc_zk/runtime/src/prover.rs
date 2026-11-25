@@ -73,12 +73,9 @@ pub fn run_mdoc_prover_inner<RNG: RandomEngine>(
         now,
         doc_type,
         None,
-        None,
-        None,
         rng,
     )
 }
-
 
 /// Prove a private issuer-authenticated birth-date interval.
 #[allow(clippy::too_many_arguments)]
@@ -101,9 +98,17 @@ pub fn run_mdoc_prover_inner_with_birthdate<RNG: RandomEngine>(
     }
 
     run_mdoc_prover_inner_impl(
-        zk_spec, circuits_compressed, mdoc_bytes,
-        pkx, pky, transcript, attrs, now, doc_type,
-        None, None, Some((cutoff, earliest)), rng,
+        zk_spec,
+        circuits_compressed,
+        mdoc_bytes,
+        pkx,
+        pky,
+        transcript,
+        attrs,
+        now,
+        doc_type,
+        Some((cutoff, earliest)),
+        rng,
     )
 }
 
@@ -117,8 +122,6 @@ fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
     attrs: &[RequestedAttribute],
     now: &str,
     doc_type: &str,
-    secret_seed: Option<&[u8; 16]>,
-    pseudonym_scope: Option<(&[u8; 32], &[u8; 32])>,
     birthdate_bounds: Option<(&[u8; 10], &[u8; 10])>,
     rng: &mut RNG,
 ) -> Result<Vec<u8>, MdocProverErrorCode> {
@@ -160,23 +163,20 @@ fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
         runtime_algebra::subfield::BinarySubfield::new(&core_algebra::proto::GF2_16_BASIS_V1);
     let make_interpolator_hash = Lch14InterpolatorFactory::new(&gf2, &sf_hash);
 
-    let circuits_result =
-        if birthdate_bounds.is_some() && pseudonym_scope.is_none() {
-            crate::proto::decompress_circuits_checked(
-                circuits_compressed,
-                &p256,
-                &gf2,
-                &zk_spec.combined_hash,
-                version,
-            )
-        } else {
-            crate::proto::decompress_circuits(
-                circuits_compressed, &p256, &gf2,
-            )
-        };
+    let circuits_result = if birthdate_bounds.is_some() {
+        crate::proto::decompress_circuits_checked(
+            circuits_compressed,
+            &p256,
+            &gf2,
+            &zk_spec.combined_hash,
+            version,
+        )
+    } else {
+        crate::proto::decompress_circuits(circuits_compressed, &p256, &gf2)
+    };
 
-    let (c_sig, c_hash) = circuits_result
-        .map_err(|_| MdocProverErrorCode::CircuitParsingFailure)?;
+    let (c_sig, c_hash) =
+        circuits_result.map_err(|_| MdocProverErrorCode::CircuitParsingFailure)?;
 
     let parsed: ParsedMdoc<runtime_algebra::RuntimeNat<4>> =
         parse_mdoc(mdoc_bytes, transcript, doc_type).map_err(|err| match err {
@@ -190,21 +190,8 @@ fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
         }
     }
 
-    let witness_hash = if let (Some(seed), Some((v, _n))) =
-        (secret_seed, pseudonym_scope)
-    {
-        crate::concrete::push_witness_hash_with_seed_and_verifier(
-            version, &gf2, attrs, &parsed, &mac_ap, seed, v,
-        )?
-    } else if let Some(seed) = secret_seed {
-        crate::concrete::push_witness_hash_with_seed(
-            version, &gf2, attrs, &parsed, &mac_ap, seed,
-        )?
-    } else {
-        crate::push_witness_hash(
-            version, &gf2, attrs, &parsed, &mac_ap,
-        )?
-    };
+    let witness_hash = crate::push_witness_hash(version, &gf2, attrs, &parsed, &mac_ap)?;
+
     let witness_sig = crate::push_witness_sig(
         version, &p256, &q256, &secp256r1, &issuer_pk, &parsed, &mac_ap,
     )?;
@@ -245,40 +232,29 @@ fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
         av_val,
         &mac_ap,
     );
-    let hash_pub_inputs =
-        if let (Some((v, n)), Some((cutoff, earliest))) =
-            (pseudonym_scope, birthdate_bounds)
-        {
-            crate::concrete::push_input_hash_with_pseudonym_and_birthdate(
-                version,
-                &gf2,
-                attrs,
-                now.as_bytes(),
-                &macs,
-                av_val,
-                false,
-                doc_type.as_bytes(),
-                v,
-                n,
-                cutoff,
-                earliest,
-            )
-        } else if let Some((cutoff, earliest)) = birthdate_bounds {
-            crate::concrete::push_input_hash_with_birthdate(
-                version, &gf2, attrs, now.as_bytes(),
-                &macs, av_val, false, doc_type.as_bytes(),
-                cutoff, earliest,
-            )
-        } else if let Some((v, n)) = pseudonym_scope {
-        crate::concrete::push_input_hash_with_pseudonym(
-            version, &gf2, attrs, now.as_bytes(),
-            &macs, av_val, false, doc_type.as_bytes(),
-            v, n,
+    let hash_pub_inputs = if let Some((cutoff, earliest)) = birthdate_bounds {
+        crate::concrete::push_input_hash_with_birthdate(
+            version,
+            &gf2,
+            attrs,
+            now.as_bytes(),
+            &macs,
+            av_val,
+            false,
+            doc_type.as_bytes(),
+            cutoff,
+            earliest,
         )
     } else {
         crate::push_input_hash(
-            version, &gf2, attrs, now.as_bytes(),
-            &macs, av_val, false, doc_type.as_bytes(),
+            version,
+            &gf2,
+            attrs,
+            now.as_bytes(),
+            &macs,
+            av_val,
+            false,
+            doc_type.as_bytes(),
         )
     };
 

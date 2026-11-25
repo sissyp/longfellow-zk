@@ -74,10 +74,8 @@ pub fn run_mdoc_verifier_inner(
         doc_type,
         proof_bytes,
         None,
-        None,
     )
 }
-
 
 #[allow(clippy::too_many_arguments)]
 
@@ -101,9 +99,16 @@ pub fn run_mdoc_verifier_inner_with_birthdate(
     }
 
     run_mdoc_verifier_inner_impl(
-        zk_spec, circuits_compressed, pkx, pky,
-        transcript, attrs, now, doc_type, proof_bytes,
-        None, Some((cutoff, earliest)),
+        zk_spec,
+        circuits_compressed,
+        pkx,
+        pky,
+        transcript,
+        attrs,
+        now,
+        doc_type,
+        proof_bytes,
+        Some((cutoff, earliest)),
     )
 }
 
@@ -117,7 +122,6 @@ fn run_mdoc_verifier_inner_impl(
     now: &str,
     doc_type: &str,
     proof_bytes: &[u8],
-    pseudonym_scope: Option<(&[u8; 32], &[u8; 32])>,
     birthdate_bounds: Option<(&[u8; 10], &[u8; 10])>,
 ) -> Result<(), MdocVerifierErrorCode> {
     let version = zk_spec.version;
@@ -156,23 +160,20 @@ fn run_mdoc_verifier_inner_impl(
         runtime_algebra::subfield::BinarySubfield::new(&core_algebra::proto::GF2_16_BASIS_V1);
     let make_interpolator_hash = Lch14InterpolatorFactory::new(&gf2, &sf_hash);
 
-    let circuits_result =
-        if birthdate_bounds.is_some() && pseudonym_scope.is_none() {
-            crate::proto::decompress_circuits_checked(
-                circuits_compressed,
-                &p256,
-                &gf2,
-                &zk_spec.combined_hash,
-                version,
-            )
-        } else {
-            crate::proto::decompress_circuits(
-                circuits_compressed, &p256, &gf2,
-            )
-        };
+    let circuits_result = if birthdate_bounds.is_some() {
+        crate::proto::decompress_circuits_checked(
+            circuits_compressed,
+            &p256,
+            &gf2,
+            &zk_spec.combined_hash,
+            version,
+        )
+    } else {
+        crate::proto::decompress_circuits(circuits_compressed, &p256, &gf2)
+    };
 
-    let (c_sig, c_hash) = circuits_result
-        .map_err(|_| MdocVerifierErrorCode::CircuitParsingFailure)?;
+    let (c_sig, c_hash) =
+        circuits_result.map_err(|_| MdocVerifierErrorCode::CircuitParsingFailure)?;
 
     let verifier_hash = ZkVerifier::<2, _>::new(c_hash, config_hash);
     let geom_hash = verifier_hash.geometry(&runtime_zk::common::ZkContext {
@@ -221,40 +222,29 @@ fn run_mdoc_verifier_inner_impl(
     let av_buf = tp.bytes(16);
     let av_val = u128::from_le_bytes(av_buf.try_into().unwrap());
 
-    let pub_inputs_hash =
-        if let (Some((v, n)), Some((cutoff, earliest))) =
-            (pseudonym_scope, birthdate_bounds)
-        {
-            crate::concrete::push_input_hash_with_pseudonym_and_birthdate(
-                version,
-                &gf2,
-                attrs,
-                now.as_bytes(),
-                &proof.macs,
-                av_val,
-                false,
-                doc_type.as_bytes(),
-                v,
-                n,
-                cutoff,
-                earliest,
-            )
-        } else if let Some((cutoff, earliest)) = birthdate_bounds {
-            crate::concrete::push_input_hash_with_birthdate(
-                version, &gf2, attrs, now.as_bytes(),
-                &proof.macs, av_val, false, doc_type.as_bytes(),
-                cutoff, earliest,
-            )
-        } else if let Some((v, n)) = pseudonym_scope {
-        crate::concrete::push_input_hash_with_pseudonym(
-            version, &gf2, attrs, now.as_bytes(),
-            &proof.macs, av_val, false, doc_type.as_bytes(),
-            v, n,
+    let pub_inputs_hash = if let Some((cutoff, earliest)) = birthdate_bounds {
+        crate::concrete::push_input_hash_with_birthdate(
+            version,
+            &gf2,
+            attrs,
+            now.as_bytes(),
+            &proof.macs,
+            av_val,
+            false,
+            doc_type.as_bytes(),
+            cutoff,
+            earliest,
         )
     } else {
         push_input_hash(
-            version, &gf2, attrs, now.as_bytes(),
-            &proof.macs, av_val, false, doc_type.as_bytes(),
+            version,
+            &gf2,
+            attrs,
+            now.as_bytes(),
+            &proof.macs,
+            av_val,
+            false,
+            doc_type.as_bytes(),
         )
     };
 
