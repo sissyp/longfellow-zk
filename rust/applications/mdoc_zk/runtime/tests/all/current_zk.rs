@@ -2159,5 +2159,75 @@ fn test_google_dob_only() {
         ).is_err()
     );
 
+
+    // SECURITY TEST 1: Incorrect issuer public key.
+    // Use a different valid point: the negation of the
+    // original P-256 public key.
+    let p256_prime = num_bigint::BigUint::parse_bytes(
+        b"ffffffff00000001000000000000000000000000ffffffffffffffffffffffff",
+        16,
+    ).unwrap();
+    let original_y = num_bigint::BigUint::parse_bytes(
+        pky.trim_start_matches("0x").as_bytes(), 16,
+    ).unwrap();
+    let wrong_y = format!("0x{:064x}", &p256_prime - original_y);
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_verifier_inner_with_birthdate(
+            &spec, &compressed, pkx, &wrong_y,
+            &transcript, &verifier_attrs, now, doc_type,
+            &proof, &cutoff, &earliest,
+        ).is_err(),
+        "Verifier accepted incorrect issuer public key"
+    );
+
+    println!("Incorrect issuer key rejected");
+
+    // SECURITY TEST 2: Modified session transcript.
+    let mut wrong_transcript = transcript.clone();
+    let last = wrong_transcript.len() - 1;
+    wrong_transcript[last] ^= 1;
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_verifier_inner_with_birthdate(
+            &spec, &compressed, pkx, pky,
+            &wrong_transcript, &verifier_attrs, now, doc_type,
+            &proof, &cutoff, &earliest,
+        ).is_err(),
+        "Verifier accepted modified transcript"
+    );
+
+    println!("Modified session transcript rejected");
+
+    // SECURITY TEST 3: DOB below the permitted interval.
+    let invalid_lower = *b"2001-01-01";
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_prover_inner_with_birthdate(
+            &spec, &compressed, &mdoc, pkx, pky,
+            &transcript, &req_attrs, now, doc_type,
+            &invalid_lower, &earliest, &mut rng,
+        ).is_err(),
+        "Prover accepted DOB below lower bound"
+    );
+
+    println!("DOB below interval rejected");
+
+    // SECURITY TEST 4: DOB above the permitted interval.
+    let invalid_upper = *b"1999-12-31";
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_prover_inner_with_birthdate(
+            &spec, &compressed, &mdoc, pkx, pky,
+            &transcript, &req_attrs, now, doc_type,
+            &cutoff, &invalid_upper, &mut rng,
+        ).is_err(),
+        "Prover accepted DOB above upper bound"
+    );
+
+    println!("DOB above interval rejected");
+
+    println!("DOB-ONLY SECURITY REGRESSION TESTS PASSED");
+
     println!("DOB-ONLY NEGATIVE VERIFIER TESTS PASSED");
 }
