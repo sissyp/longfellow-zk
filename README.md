@@ -79,3 +79,7 @@ them:
 $ ./algebra/fft_test --benchmark_filter='BM_*'
 $ ./circuits/sha/flatsha256_circuit_test --benchmark_filter=BM_ShaZK_fp2_128
 ```
+
+## DOB-only extension
+
+[DOB-only implementation](README_DOB.md)
