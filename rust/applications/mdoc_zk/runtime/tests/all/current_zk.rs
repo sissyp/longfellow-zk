@@ -2057,3 +2057,107 @@ fn test_peter_pseudonym_birthdate() {
 
 }
 
+
+#[test]
+fn test_google_dob_only() {
+    use runtime_algebra::RuntimeNat;
+
+    let mdoc = std::fs::read("/tmp/peter-device-response.cbor")
+        .expect("Missing mdoc fixture");
+    let transcript = std::fs::read("/tmp/peter-transcript.cbor")
+        .expect("Missing transcript fixture");
+
+    let doc_type = "eu.europa.ec.eudi.nym_auth.1";
+
+    let parsed =
+        mdoc_zk_circuits::cbor::mdoc::parse_mdoc::<RuntimeNat<4>>(
+            &mdoc, &transcript, doc_type,
+        ).expect("Cannot parse mdoc");
+
+    let birth = parsed.get_attribute(b"birth_date")
+        .expect("Missing birth_date");
+
+    let req_attrs = vec![
+        req_attr(doc_type, b"birth_date", &birth.cbor_value),
+    ];
+
+    let profile = mdoc_zk_compile::LigeroProfile {
+        rateinv: 7,
+        nreq: 132,
+    };
+
+    let (archive, config_sig, config_hash) =
+        mdoc_zk_compile::compile_circuits(
+            1, profile, profile,
+        ).expect("DOB circuit compilation failed");
+
+    let mut spec = mdoc_zk_runtime::CURRENT_ZK_SPECS[0];
+    spec.ligero_hash = config_hash;
+    spec.ligero_sig = config_sig;
+    spec.combined_hash = [0u8; 32];
+
+    let compressed = zstd::encode_all(
+        &archive[..],
+        mdoc_zk_circuits::config::K_ZSTD_LEVEL,
+    ).unwrap();
+
+    let pkx = "0xb626aa933b215bc28f3b4924bf675454d2121f28bbb146415c181092f7fd9080";
+    let pky = "0xbf779357652d68be5ab61c667bde4ebff67b9efa2535c1138508fad656a2ab63";
+    let now = "2026-10-07T12:00:00Z";
+
+    let cutoff = *b"1990-01-01";
+    let earliest = *b"2010-12-31";
+
+    let mut rng = runtime_random::DeterministicRng::new(42);
+
+    let proof = mdoc_zk_runtime::run_mdoc_prover_inner_with_birthdate(
+        &spec, &compressed, &mdoc, pkx, pky,
+        &transcript, &req_attrs, now, doc_type,
+        &cutoff, &earliest, &mut rng,
+    ).expect("DOB-only prover failed");
+
+    println!("DOB-only proof size: {} bytes", proof.len());
+
+    // Verifier does not receive the actual DOB.
+    let mut dummy_birth = [0u8; 14];
+    dummy_birth[..4].copy_from_slice(&[0xd9, 0x03, 0xec, 0x6a]);
+    dummy_birth[4..].copy_from_slice(b"1999-01-01");
+
+    assert_ne!(birth.cbor_value.as_slice(), &dummy_birth);
+
+    let verifier_attrs = vec![
+        req_attr(doc_type, b"birth_date", &dummy_birth),
+    ];
+
+    mdoc_zk_runtime::run_mdoc_verifier_inner_with_birthdate(
+        &spec, &compressed, pkx, pky,
+        &transcript, &verifier_attrs, now, doc_type,
+        &proof, &cutoff, &earliest,
+    ).expect("DOB-only verification failed");
+
+    println!("DOB-ONLY PROOF VERIFIED");
+
+    // Changed lower bound must be rejected.
+    let bad_cutoff = *b"2001-01-01";
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_verifier_inner_with_birthdate(
+            &spec, &compressed, pkx, pky,
+            &transcript, &verifier_attrs, now, doc_type,
+            &proof, &bad_cutoff, &earliest,
+        ).is_err()
+    );
+
+    // Changed upper bound must be rejected.
+    let bad_earliest = *b"1999-12-31";
+
+    assert!(
+        mdoc_zk_runtime::run_mdoc_verifier_inner_with_birthdate(
+            &spec, &compressed, pkx, pky,
+            &transcript, &verifier_attrs, now, doc_type,
+            &proof, &cutoff, &bad_earliest,
+        ).is_err()
+    );
+
+    println!("DOB-ONLY NEGATIVE VERIFIER TESTS PASSED");
+}

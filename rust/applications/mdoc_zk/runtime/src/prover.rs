@@ -184,6 +184,34 @@ pub fn run_mdoc_prover_inner_with_pseudonym_and_birthdate<RNG: RandomEngine>(
     )
 }
 
+
+/// Prove a private issuer-authenticated birth-date interval.
+#[allow(clippy::too_many_arguments)]
+pub fn run_mdoc_prover_inner_with_birthdate<RNG: RandomEngine>(
+    zk_spec: &ZkSpecStruct,
+    circuits_compressed: &[u8],
+    mdoc_bytes: &[u8],
+    pkx: &str,
+    pky: &str,
+    transcript: &[u8],
+    attrs: &[RequestedAttribute],
+    now: &str,
+    doc_type: &str,
+    cutoff: &[u8; 10],
+    earliest: &[u8; 10],
+    rng: &mut RNG,
+) -> Result<Vec<u8>, MdocProverErrorCode> {
+    if attrs.len() != 1 || attrs[0].id != b"birth_date" {
+        return Err(MdocProverErrorCode::InvalidInput);
+    }
+
+    run_mdoc_prover_inner_impl(
+        zk_spec, circuits_compressed, mdoc_bytes,
+        pkx, pky, transcript, attrs, now, doc_type,
+        None, None, Some((cutoff, earliest)), rng,
+    )
+}
+
 fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
     zk_spec: &ZkSpecStruct,
     circuits_compressed: &[u8],
@@ -324,6 +352,12 @@ fn run_mdoc_prover_inner_impl<RNG: RandomEngine>(
                 n,
                 cutoff,
                 earliest,
+            )
+        } else if let Some((cutoff, earliest)) = birthdate_bounds {
+            crate::concrete::push_input_hash_with_birthdate(
+                version, &gf2, attrs, now.as_bytes(),
+                &macs, av_val, false, doc_type.as_bytes(),
+                cutoff, earliest,
             )
         } else if let Some((v, n)) = pseudonym_scope {
         crate::concrete::push_input_hash_with_pseudonym(

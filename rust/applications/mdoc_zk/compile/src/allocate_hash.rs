@@ -161,19 +161,6 @@ where
         len: expected_doc_type_len,
     };
 
-    // Public verifier identifier hash V.
-    let (verifier_input, _) = allocator
-        .allocate_plucked_v8_array::<32, { K_HASH_V8_BIT_PLUCKER }>(
-            plucker_v8,
-        );
-
-    // Public verifier-scoped pseudonym N.
-    let (pseudonym, _) = allocator
-        .allocate_plucked_v8_array::<32, { K_HASH_V8_BIT_PLUCKER }>(
-            plucker_v8,
-        );
-
-
     // Public birth-date interval endpoints, encoded as YYYY-MM-DD.
     // cutoff <= private DOB <= earliest.
     let (cutoff, _) = allocator
@@ -240,21 +227,6 @@ where
 
     let sha_derived = allocate_sha_derived(allocator, plucker_sha, K_MAX_SHA_BLOCKS);
 
-    // Experimental SHA256(seed) message: 64 padded bytes.
-    let (seed_preimage, _) =
-        allocator.allocate_plucked_v8_array::<
-            64,
-            { K_HASH_V8_BIT_PLUCKER }
-        >(plucker_v8);
-
-    let seed_sha_derived =
-        allocate_sha_derived(allocator, plucker_sha, 1);
-
-    // SHA256(DST || seed || zero32 || V).
-    // The 119-byte message requires two SHA-256 blocks.
-    let pseudonym_sha_derived =
-        allocate_sha_derived(allocator, plucker_sha, 2);
-
     let subfield_boundary_val = allocator.pos;
 
     let mac_ap = std::array::from_fn(|_| [allocator.allocate_wire(), allocator.allocate_wire()]);
@@ -275,11 +247,8 @@ where
         dev_key_info_offset_in_preimage,
         value_digests_offset_in_preimage,
         attribute_given,
-        verifier_input,
-        pseudonym,
         cutoff,
         earliest,
-        seed_preimage,
         mac_e,
         mac_device_pkx,
         mac_device_pky,
@@ -289,8 +258,6 @@ where
 
     let derived = HashDerived {
         attribute_derived,
-        seed_sha_derived,
-        pseudonym_sha_derived,
         sha_derived,
     };
 

@@ -63,9 +63,6 @@ pub fn push_witness_hash_with_seed_and_verifier<N: Nat<4>>(
 ) -> Result<Vec<Gf2_128>, MdocProverErrorCode> {
     let mut builder = AssignmentBuilder::new(gf2);
 
-    let secret_seed = secret_seed
-        .ok_or(MdocProverErrorCode::InvalidInput)?;
-
     // Private attribute CBOR values appear first in the
     // experimental circuit's private-input region.
     for la in req_attrs {
@@ -137,59 +134,6 @@ pub fn push_witness_hash_with_seed_and_verifier<N: Nat<4>>(
 
     // 7. sha_witnesses (MSO preimage hashing)
     builder.push_sha256msg_derived(&mso_sha_derived);
-
-    // 8. SHA256(private 16-byte seed).
-    // This matches the experimental allocation:
-    // seed_preimage followed by seed_sha_derived.
-    let seed_sha_in = circuits_sha256msg::concrete::given(
-        secret_seed,
-        &circuits_sha256::constants::INITIAL,
-        1,
-    )
-    .map_err(|_| MdocProverErrorCode::InvalidInput)?;
-
-    let seed_sha_derived =
-        circuits_sha256msg::concrete::derived(
-            &seed_sha_in,
-            1,
-        );
-
-    for &byte in &seed_sha_in.padded_preimage {
-        builder.push_v8(byte);
-    }
-
-    builder.push_sha256msg_derived(&seed_sha_derived);
-
-    // 9. Verifier-scoped pseudonym:
-    // SHA256(DST || seed || zero32 || V).
-    const DST: &[u8] =
-        b"nym_auth/v1/known-offender-matching-ssc";
-
-    let mut pseudonym_message = Vec::with_capacity(119);
-    pseudonym_message.extend_from_slice(DST);
-    pseudonym_message.extend_from_slice(secret_seed);
-    pseudonym_message.extend_from_slice(&[0u8; 32]);
-    pseudonym_message.extend_from_slice(verifier_input);
-
-    assert_eq!(pseudonym_message.len(), 119);
-
-    let pseudonym_sha_in =
-        circuits_sha256msg::concrete::given(
-            &pseudonym_message,
-            &circuits_sha256::constants::INITIAL,
-            2,
-        )
-        .map_err(|_| MdocProverErrorCode::InvalidInput)?;
-
-    let pseudonym_sha_derived =
-        circuits_sha256msg::concrete::derived(
-            &pseudonym_sha_in,
-            2,
-        );
-
-    builder.push_sha256msg_derived(
-        &pseudonym_sha_derived
-    );
 
     // 10. Existing cross-circuit MAC witnesses.
     for pair in mac_ap {

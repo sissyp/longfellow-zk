@@ -61,15 +61,6 @@ pub fn allocate_given<L: LogicIO>(
         len: bitvec_io.next::<K_ATTR_INDEX_BITS>(pos),
     };
 
-    // Public verifier scope V = SHA256(client_id).
-    let verifier_input: [circuits_bitvec::V8<L>; 32] =
-        std::array::from_fn(|_| bitvec_io.next::<8>(pos));
-
-    // Public verifier-scoped pseudonym N.
-    let pseudonym: [circuits_bitvec::V8<L>; 32] =
-        std::array::from_fn(|_| bitvec_io.next::<8>(pos));
-
-
     // Public birth-date interval endpoints (YYYY-MM-DD).
     let cutoff: [circuits_bitvec::V8<L>; 10] =
         std::array::from_fn(|_| bitvec_io.next::<8>(pos));
@@ -105,9 +96,6 @@ pub fn allocate_given<L: LogicIO>(
         })
         .collect();
 
-    let seed_preimage =
-        std::array::from_fn(|_| bitvec_io.next::<8>(pos));
-
     let mac_ap = std::array::from_fn(|_| [logic.next(pos), logic.next(pos)]);
 
     Given {
@@ -126,11 +114,8 @@ pub fn allocate_given<L: LogicIO>(
         dev_key_info_offset_in_preimage,
         value_digests_offset_in_preimage,
         attribute_given,
-        verifier_input,
-        pseudonym,
         cutoff,
         earliest,
-        seed_preimage,
         mac_e,
         mac_device_pkx,
         mac_device_pky,
@@ -153,18 +138,8 @@ pub fn allocate_derived<L: LogicIO, const MAX_MSO_BLOCKS: usize>(
     let sha_derived =
         circuits_sha256msg::allocate_derived::<_, MAX_MSO_BLOCKS>(bv, pos);
 
-    let seed_sha_derived =
-        circuits_sha256msg::allocate_derived::<_, 1>(bv, pos);
-
-    // SHA256(DST || seed || zero32 || V).
-    // Message length: 119 bytes, requiring two blocks.
-    let pseudonym_sha_derived =
-        circuits_sha256msg::allocate_derived::<_, 2>(bv, pos);
-
     Derived {
         attribute_derived,
-        seed_sha_derived,
-        pseudonym_sha_derived,
         sha_derived,
     }
 }
