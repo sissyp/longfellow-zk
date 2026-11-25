@@ -32,8 +32,8 @@ use super::mdoc_hash_corruptors;
 fn test_eval_mdoc_hash_independent() {
     let fc = P256Field::new();
     let (_, parsed, now) =
-        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
+        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
 
     let tracker = compile_logic::tracker::AssertionTracker::new();
     let l = EvalLogic::new_with_tracker(&fc, &tracker);
@@ -56,8 +56,8 @@ fn test_eval_mdoc_hash_independent() {
 fn test_eval_mdoc_hash_generic<'a, const W: usize, FC>(l: &'a EvalLogic<'a, FC>)
 where FC: CompileField + circuits_analog_adder::FieldWrappingSum {
     let (_, parsed, now) =
-        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
+        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
 
     let mac_input = HashMac {
         mac_av: 0,
@@ -78,8 +78,8 @@ where FC: CompileField + circuits_analog_adder::FieldWrappingSum {
 fn test_eval_mdoc_hash_with_mac_generic<'a, const W: usize, FC>(l: &'a EvalLogic<'a, FC>)
 where FC: CompileField + circuits_analog_adder::FieldWrappingSum {
     let (_, parsed, now) =
-        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
+        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
 
     let av_u128 = 0x112233445566778899aabbccddeeff00u128;
     let ap0_u128 = 0xabcdef0123456789abcdef0123456789u128;
@@ -286,8 +286,8 @@ fn test_namespace_mixup_exploit() {
     let f = Gf2_128Field::new();
 
     let (_, parsed, now) =
-        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let mut hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
+        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
+    let mut hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
 
     let doc_type_off = 23 + parsed.doc_type_offset_in_mso;
     hash_input.cbor_mso[doc_type_off] ^= 1;
@@ -332,8 +332,8 @@ fn test_eval_mdoc_hash_shared_corruptors() {
     let f = Gf2_128Field::new();
 
     let (_, parsed, now) =
-        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let base_hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
+        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
+    let base_hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
     let base_mac_input = HashMac {
         mac_av: 0x112233445566778899aabbccddeeff00u128,
         mac_ap: [
@@ -392,10 +392,10 @@ fn test_check_doc_type_suppression() {
     let bv = BitvecLogic::new(&l);
 
     let (_, parsed, now) =
-        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
+        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
 
     // 1. When suppress_doc_type_check is false and expected_doc_type matches, evaluation succeeds.
-    let mut hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
+    let mut hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
     hash_input.suppress_doc_type_check = false;
     hash_input.expected_doc_type = b"org.iso.18013.5.1.mDL".to_vec();
 

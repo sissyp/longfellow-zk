@@ -43,8 +43,8 @@ fn compile_hash_circuit<FC>(
 )
 where FC: MdocHashCompileField {
     let (_, parsed, now) =
-        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
+        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
     let mut pos = compile_logic::K_FIRST_WIRE_POSITION;
     let num_attrs = hash_input.attrs.len();
 
@@ -169,6 +169,10 @@ where
         fr,
     );
 
+    // Public DOB interval bounds, matching allocate_given().
+    push_bytes(&mut inputs, &given.hash_input.cutoff, 10, fr);
+    push_bytes(&mut inputs, &given.hash_input.earliest, 10, fr);
+
     push_nat(&mut inputs, &given.hash_input.issuer_sig_e, 256, fr);
     push_bytes(&mut inputs, &given.preimage.value, K_MSO_PREIMAGE_LEN, fr);
     push_bits(&mut inputs, u128::from(given.preimage.len), 16, fr);
@@ -229,8 +233,8 @@ fn test_mdoc_zk_circuits_hash_for_field<
     _fr: &FR,
 ) {
     let (_, parsed, now) =
-        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
+        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
     let num_attrs = hash_input.attrs.len();
 
     let (_circuit, stats, _symbols) = compile_compiler::compile(fc, |iologic| {
@@ -268,8 +272,8 @@ fn test_compile_mdoc_hash_corruptors() {
     let (circuit, _, symbols) = compile_hash_circuit(&fc);
 
     let (_, parsed, now) =
-        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::TEST_DATA);
-    let hash_input = hash_input_of_parsed_mdoc(&parsed, &parsed.all_attr_ids(), now, [0u8; 16]);
+        parse_test_data::<4, CompileNat<4>>(&mdoc_zk_testcases::vectors::BIRTHDATE_1971_09_01_MDOC_3);
+    let hash_input = hash_input_of_parsed_mdoc(&parsed, &[&b"birth_date"[..]], now, [0u8; 16]);
     let mac_input = HashMac {
         mac_av: 0x112233445566778899aabbccddeeff00,
         mac_ap: [[
@@ -294,6 +298,33 @@ fn test_compile_mdoc_hash_corruptors() {
     for corruptor in mdoc_hash_corruptors::all_mdoc_hash_corruptors() {
         let mut corrupted = base_given.clone();
         (corruptor.corrupt)(&mut corrupted);
+
+        let baseline_inputs =
+            make_hash_inputs(&base_given, &base_derived, &fr);
+        let corrupted_inputs =
+            make_hash_inputs(&corrupted, &base_derived, &fr);
+
+        let changed: Vec<usize> = baseline_inputs
+            .iter()
+            .zip(corrupted_inputs.iter())
+            .enumerate()
+            .filter_map(|(i, (a, b))| if a != b { Some(i) } else { None })
+            .collect();
+
+        println!(
+            "Corruptor: {}, input lengths: {} / {}, changed positions: {:?}",
+            corruptor.name,
+            baseline_inputs.len(),
+            corrupted_inputs.len(),
+            changed
+        );
+
+        assert!(
+            !changed.is_empty(),
+            "Corruptor '{}' did not change compiled inputs",
+            corruptor.name
+        );
+
         let result = compile_eval::eval_circuit_fc(
             &fc,
             &fr,

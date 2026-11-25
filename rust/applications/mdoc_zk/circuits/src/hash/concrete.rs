@@ -387,7 +387,5 @@ impl ConcreteDerived {
             attr_wit.sha_derived.push_derived(fr, &mut push);
         }
         self.sha_derived.push_derived(fr, &mut push);
-        self.seed_sha_derived.push_derived(fr, &mut push);
-        self.pseudonym_sha_derived.push_derived(fr, &mut push);
     }
 }
