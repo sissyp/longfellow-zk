@@ -114,6 +114,12 @@ fn run() -> Result<(), String> {
     let transcript = fs::read(transcript_path)
         .map_err(|e| format!("Cannot read transcript: {e}"))?;
 
+    // mDL document type and attribute namespace are different.
+    let attribute_namespace = match doc_type.as_str() {
+        "org.iso.18013.5.1.mDL" => "org.iso.18013.5.1",
+        _ => doc_type.as_str(),
+    };
+
     let spec = trusted_spec();
 
     if mode == "prove" {
@@ -132,7 +138,7 @@ fn run() -> Result<(), String> {
             .ok_or("Issuer-signed birth_date attribute not found")?;
 
         let attributes = vec![
-            req_attr(doc_type, b"birth_date", &birth.cbor_value),
+            req_attr(attribute_namespace, b"birth_date", &birth.cbor_value),
         ];
 
         let mut rng = runtime_random::SecureRandomEngine::new();
@@ -172,7 +178,7 @@ fn run() -> Result<(), String> {
         dummy_birth[4..].copy_from_slice(b"1999-01-01");
 
         let attributes = vec![
-            req_attr(doc_type, b"birth_date", &dummy_birth),
+            req_attr(attribute_namespace, b"birth_date", &dummy_birth),
         ];
 
         run_mdoc_verifier_inner_with_birthdate(
