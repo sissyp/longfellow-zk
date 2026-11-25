@@ -76,11 +76,16 @@ fn date_bytes(s: &str) -> Result<[u8; 10], String> {
 fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() != 11 || !["prove", "verify"].contains(&args[1].as_str()) {
+    if args.len() < 2
+        || !matches!(
+            (args[1].as_str(), args.len()),
+            ("prove", 11) | ("verify", 10)
+        )
+    {
         return Err(
             "Usage:\n\
              dob_cli prove  <mdoc>  <transcript> <pkx> <pky> <doc_type> <now> <cutoff> <earliest> <proof_out>\n\
-             dob_cli verify <proof> <transcript> <pkx> <pky> <doc_type> <now> <cutoff> <earliest> <unused>"
+             dob_cli verify <proof> <transcript> <pkx> <pky> <doc_type> <now> <cutoff> <earliest>"
             .into()
         );
     }

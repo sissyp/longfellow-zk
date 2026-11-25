@@ -1016,6 +1016,23 @@ fn test_google_dob_only() {
     let now = fixture.now;
     let attribute_namespace = "org.iso.18013.5.1";
 
+    // Export official test-vector inputs for standalone CLI testing.
+    if let Ok(export_dir) = std::env::var("DOB_CLI_FIXTURE_DIR") {
+        let dir = std::path::Path::new(&export_dir);
+        std::fs::create_dir_all(dir).unwrap();
+
+        std::fs::write(dir.join("mdoc.bin"), &mdoc).unwrap();
+        std::fs::write(dir.join("transcript.bin"), &transcript).unwrap();
+
+        std::fs::write(
+            dir.join("metadata.txt"),
+            format!("{pkx}\n{pky}\n{doc_type}\n{now}\n"),
+        ).unwrap();
+
+        println!("DOB CLI fixture exported to {}", dir.display());
+    }
+
+
     let parsed =
         mdoc_zk_circuits::cbor::mdoc::parse_mdoc::<RuntimeNat<4>>(
             &mdoc, &transcript, doc_type,
