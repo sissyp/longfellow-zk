@@ -78,67 +78,6 @@ pub fn run_mdoc_verifier_inner(
     )
 }
 
-/// Verify an experimental verifier-scoped pseudonym.
-#[allow(clippy::too_many_arguments)]
-pub fn run_mdoc_verifier_inner_with_pseudonym(
-    zk_spec: &ZkSpecStruct,
-    circuits_compressed: &[u8],
-    pkx: &str,
-    pky: &str,
-    transcript: &[u8],
-    attrs: &[RequestedAttribute],
-    now: &str,
-    doc_type: &str,
-    proof_bytes: &[u8],
-    verifier_input: &[u8; 32],
-    pseudonym: &[u8; 32],
-) -> Result<(), MdocVerifierErrorCode> {
-    run_mdoc_verifier_inner_impl(
-        zk_spec,
-        circuits_compressed,
-        pkx,
-        pky,
-        transcript,
-        attrs,
-        now,
-        doc_type,
-        proof_bytes,
-        Some((verifier_input, pseudonym)),
-        None,
-    )
-}
-
-/// Verify a pseudonym and private birth-date interval.
-#[allow(clippy::too_many_arguments)]
-pub fn run_mdoc_verifier_inner_with_pseudonym_and_birthdate(
-    zk_spec: &ZkSpecStruct,
-    circuits_compressed: &[u8],
-    pkx: &str,
-    pky: &str,
-    transcript: &[u8],
-    attrs: &[RequestedAttribute],
-    now: &str,
-    doc_type: &str,
-    proof_bytes: &[u8],
-    verifier_input: &[u8; 32],
-    pseudonym: &[u8; 32],
-    cutoff: &[u8; 10],
-    earliest: &[u8; 10],
-) -> Result<(), MdocVerifierErrorCode> {
-    run_mdoc_verifier_inner_impl(
-        zk_spec,
-        circuits_compressed,
-        pkx,
-        pky,
-        transcript,
-        attrs,
-        now,
-        doc_type,
-        proof_bytes,
-        Some((verifier_input, pseudonym)),
-        Some((cutoff, earliest)),
-    )
-}
 
 #[allow(clippy::too_many_arguments)]
 
