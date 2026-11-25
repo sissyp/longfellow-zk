@@ -25,5 +25,10 @@ testonly = [
 ]
 
 [dev-dependencies]
+core-proto = { path = "../../core/proto" }
 compile-compiler = { path = "../../compile/compiler" }
 circuits-sha256 = { path = "./", features = ["testonly"] }
+
+runtime-zk = { path = "../../runtime/zk" }
+runtime-ligero = { path = "../../runtime/ligero" }
+runtime-random = { path = "../../runtime/random" }

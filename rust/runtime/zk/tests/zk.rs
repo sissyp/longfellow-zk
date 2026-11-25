@@ -921,3 +921,152 @@ fn test_zk_zero_layers() {
         }
     }
 }
+
+#[test]
+fn test_custom_compiled_circuit_zk_proof() {
+    use compile_algebra::gf2_128::Gf2_128Field as CompileGF;
+    use compile_logic::{Logic, LogicIO};
+    use core_proto::writer::CircuitWriter;
+
+    // 1. Compile our custom circuit over GF(2^128).
+    let fc = CompileGF::new();
+    let (compiled, stats, _symbols) =
+        compile_compiler::compile(&fc, |logic| {
+            // Input 0: reserved constant 1
+            // Input 1: public y
+            // Input 2: public z
+            // Input 3: private x
+            let y = logic.input(1);
+            let z = logic.input(2);
+            let x = logic.input(3);
+
+            let xy = logic.mul(&x, &y);
+            let assertion = logic.assert_eq("xy_equals_z", &xy, &z);
+
+            (assertion, 3, 0)
+        });
+
+    assert_eq!(stats.ninput, 4);
+    assert_eq!(stats.npublic_input, 3);
+
+    // 2. Serialize and deserialize through the runtime reader.
+    let bytes = CircuitWriter::new(&fc, core_proto::FieldID::Gf2_128)
+        .to_bytes(&compiled);
+
+    let f = Gf2_128Field::new();
+    let (circuit, remaining) =
+        CircuitReader::new(&f, core_proto::FieldID::Gf2_128)
+            .from_bytes(&bytes, true)
+            .expect("Failed to load compiled circuit");
+
+    assert!(remaining.is_empty());
+
+    println!("Compiled circuit: {} bytes", bytes.len());
+
+    // 3. A valid example: x=1, y=1, z=1.
+    let inputs = vec![f.one(), f.one(), f.one(), f.one()];
+    let npublic = circuit.raw.npublic_input;
+
+    let public = inputs[..npublic].to_vec();
+    let private = inputs[npublic..].to_vec();
+
+    let subfield =
+        BinarySubfield::new(&core_algebra::proto::GF2_16_BASIS_V1);
+    let interpolator = Lch14InterpolatorFactory::new(&f, &subfield);
+    let ctx = runtime_zk::common::ZkContext {
+        f: &f,
+        make_interpolator: &interpolator,
+    };
+
+    let config = LigeroConfig {
+        rateinv: 4,
+        nreq: 16,
+        block_enc: 256,
+    };
+
+    // Deterministic RNG is appropriate only for this local test.
+    let mut rng = SimpleRng { state: 42 };
+    let mut prover_transcript = Transcript::new(b"custom_circuit_v1");
+
+    // 4. Commit to private witness.
+    let prover = ZkProver::new(circuit, config);
+
+    let (commitment, geometry) = prover.commit(
+        &private,
+        &ctx,
+        &mut prover_transcript,
+        &mut rng,
+        &subfield,
+    );
+
+    // 5. Generate a real ZK proof.
+    let proof = prover.prove(
+        public.clone(),
+        private,
+        &commitment,
+        &mut prover_transcript,
+        &ctx,
+    ).expect("Proof generation failed");
+
+    let proof_bytes = proof.write(&geometry, &f, &subfield)
+        .expect("Proof serialization failed");
+
+    println!("Proof size: {} bytes", proof_bytes.len());
+
+    // 6. Deserialize the proof.
+    let verifier = ZkVerifier::new(prover.circuit, config);
+    let verification_geometry = verifier.geometry(&ctx);
+
+    let mut slice = proof_bytes.as_slice();
+    let decoded = ZkProof::read(
+        &mut slice,
+        &verification_geometry,
+        &f,
+        &subfield,
+    ).expect("Proof deserialization failed");
+
+    assert!(slice.is_empty());
+
+    // 7. Verify the valid public statement.
+    let mut verifier_transcript =
+        Transcript::new(b"custom_circuit_v1");
+
+    verifier.recv_commitment(
+        &decoded,
+        &mut verifier_transcript,
+        &ctx,
+    );
+
+    verifier.verify(
+        public,
+        &decoded,
+        &mut verifier_transcript,
+        &ctx,
+    ).expect("Valid proof was rejected");
+
+    println!("Valid proof accepted");
+
+    // 8. Negative test: change public z from 1 to 0.
+    let bad_public = vec![f.one(), f.one(), f.zero()];
+
+    let mut bad_transcript =
+        Transcript::new(b"custom_circuit_v1");
+
+    verifier.recv_commitment(
+        &decoded,
+        &mut bad_transcript,
+        &ctx,
+    );
+
+    assert!(
+        verifier.verify(
+            bad_public,
+            &decoded,
+            &mut bad_transcript,
+            &ctx,
+        ).is_err(),
+        "Verification accepted a modified public statement"
+    );
+
+    println!("Modified public statement rejected");
+}

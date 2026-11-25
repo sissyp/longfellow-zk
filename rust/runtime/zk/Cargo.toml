@@ -16,3 +16,6 @@ core-proto = { path = "../../core/proto" }
 core-algebra = { path = "../../core/algebra" }
 [dev-dependencies]
 runtime-random = { path = "../random", features = ["testonly"] }
+compile-algebra = { path = "../../compile/algebra" }
+compile-compiler = { path = "../../compile/compiler" }
+compile-logic = { path = "../../compile/logic" }

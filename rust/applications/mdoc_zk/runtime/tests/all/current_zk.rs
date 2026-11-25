@@ -1752,6 +1752,38 @@ fn test_peter_pseudonym_birthdate() {
         mdoc_zk_circuits::config::K_ZSTD_LEVEL,
     ).unwrap();
 
+
+    // Optional export of our source-generated circuit archive.
+    if let Ok(export_dir) = std::env::var("LONGFELLOW_EXPORT_DIR") {
+        let dir = std::path::Path::new(&export_dir);
+        std::fs::create_dir_all(dir).unwrap();
+
+        std::fs::write(
+            dir.join("circuits.zst"),
+            &compressed,
+        ).unwrap();
+
+        std::fs::write(
+            dir.join("circuits.lfa"),
+            &archive_bytes,
+        ).unwrap();
+
+        std::fs::write(
+            dir.join("config.txt"),
+            format!(
+                "version: {}\\nhash: {:?}\\nsignature: {:?}\\n",
+                spec.version,
+                config_hash,
+                config_sig,
+            ),
+        ).unwrap();
+
+        println!(
+            "Exported Google circuits to {}",
+            dir.display()
+        );
+    }
+
     println!("Experimental circuit compiled");
     println!("Hash config: {:?}", config_hash);
     println!("Signature config: {:?}", config_sig);

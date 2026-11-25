@@ -140,3 +140,86 @@ fn test_attached_assertion_keeps_its_path() {
     .unwrap();
     assert_eq!(failed.failed_paths(), vec!["slice"]);
 }
+
+#[test]
+fn test_our_first_custom_circuit() {
+    use core_proto::{
+        reader::CircuitReader,
+        writer::CircuitWriter,
+    };
+
+    let fc = P256Field::new();
+    let fr = RuntimeP256Field::new();
+
+    // Input 0: reserved constant 1
+    // Input 1: public y
+    // Input 2: private x
+    let (circuit, stats, symbols) =
+        compile_compiler::compile(&fc, |logic| {
+            let y = logic.input(1);
+            let x = logic.input(2);
+
+            let product = logic.mul(&x, &y);
+
+            let assertion =
+                logic.assert0("x_times_y_is_zero", &product);
+
+            // 2 public inputs: reserved 1 and y
+            (assertion, 2, 0)
+        });
+
+    println!(
+        "Circuit: {} inputs, {} public, {} layers",
+        stats.ninput,
+        stats.npublic_input,
+        stats.nlayers
+    );
+
+    assert_eq!(stats.ninput, 3);
+    assert_eq!(stats.npublic_input, 2);
+
+    // Serialize the circuit.
+    let writer = CircuitWriter::new(&fc, FieldID::P256);
+    let bytes = writer.to_bytes(&circuit);
+
+    println!("Serialized circuit: {} bytes", bytes.len());
+
+    // Load it using the same reader API as Peter.
+    let reader = CircuitReader::new(&fr, FieldID::P256);
+    let (loaded, remaining) =
+        reader.from_bytes(&bytes, true).unwrap();
+
+    assert!(remaining.is_empty());
+
+    // Valid: y = 0, x = 1, so x*y = 0.
+    let valid_inputs = vec![
+        fr.one(),
+        fr.zero(),
+        fr.one(),
+    ];
+
+    compile_eval::eval_circuit(
+        &fr,
+        &loaded,
+        &symbols,
+        &valid_inputs,
+    )
+    .assert_all_passed();
+
+    // Invalid: y = 1, x = 1, so x*y = 1.
+    let invalid_inputs = vec![
+        fr.one(),
+        fr.one(),
+        fr.one(),
+    ];
+
+    compile_eval::eval_circuit(
+        &fr,
+        &loaded,
+        &symbols,
+        &invalid_inputs,
+    )
+    .assert_any_failed_at("x_times_y_is_zero");
+
+    println!("Custom circuit serialization and evaluation passed!");
+}
